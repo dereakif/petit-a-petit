@@ -1,4 +1,5 @@
 import { mergeLesson } from './imports'
+import { mergeSharedLibrary, validateSharedChoices } from './shared'
 import {
   assertMode,
   assertRating,
@@ -16,6 +17,7 @@ import {
   validateExpression,
   validateLesson,
   validatePreferences,
+  validateSharedLibrary,
 } from './validation'
 
 const DATABASE = 'petit-a-petit'
@@ -112,6 +114,12 @@ function repositoryFor(db: IDBDatabase): Repository {
           'id must be a non-empty string of at most 200 characters.',
         )
       return transaction((data) => {
+        const state = data.sharedLibrary
+        if (
+          state?.expressions.some((expression) => expression.id === id) &&
+          !state.deletedIds.includes(id)
+        )
+          state.deletedIds.push(id)
         data.expressions = data.expressions.filter(
           (expression) => expression.id !== id,
         )
@@ -170,6 +178,17 @@ function repositoryFor(db: IDBDatabase): Repository {
         throw new Error('allowDuplicates must be a boolean.')
       return transaction((data) =>
         mergeLesson(data, valid, policy, allowDuplicates),
+      )
+    },
+    async applySharedLibrary(library, choices, token) {
+      const valid = validateSharedLibrary(library)
+      const validChoices = validateSharedChoices(choices)
+      if (typeof token !== 'string' || !token)
+        throw new Error(
+          'Shared library preview token is required; refresh the preview.',
+        )
+      return transaction((data) =>
+        mergeSharedLibrary(data, valid, validChoices, token),
       )
     },
     async restore(backup) {

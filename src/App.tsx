@@ -4,6 +4,7 @@ import {
   defaultPreferences,
   normalize,
   openRepository,
+  previewSharedLibrary,
 } from './data'
 import type {
   AppData,
@@ -12,9 +13,11 @@ import type {
   Mode,
   Rating,
   Repository,
+  SharedLibraryPreview,
 } from './data'
 import { learningText } from './language'
 import { useAudio } from './audio'
+import { usePublishedLibrary } from './shared-library'
 import {
   Answer,
   ConfirmDelete,
@@ -25,6 +28,7 @@ import {
 import Practice from './Practice'
 import Manage from './Manage.tsx'
 import './App.css'
+import './shared-library.css'
 
 type View = 'library' | 'practice' | 'manage'
 const titles: Record<View, string> = {
@@ -56,10 +60,13 @@ export default function App() {
   >({})
   const [editing, setEditing] = useState<Expression | 'new' | null>(null)
   const [deleting, setDeleting] = useState<Expression | null>(null)
+  const [reviewShared, setReviewShared] = useState(false)
   const repository = useRef<Repository | null>(null)
   const mutation = useRef(false)
   const main = useRef<HTMLElement>(null)
   const audio = useAudio(data?.preferences ?? defaultPreferences)
+  const published = usePublishedLibrary(!!data)
+  const checkPublished = published.check
 
   useEffect(() => {
     let active = true
@@ -137,12 +144,18 @@ export default function App() {
     [],
   )
 
+  const checkShared = useCallback(async () => {
+    if (await update((repo) => repo.load())) return checkPublished()
+    return null
+  }, [update, checkPublished])
+
   function navigate(next: View) {
     audio.stop()
     setView(next)
     setEditing(null)
     setDeleting(null)
     setExpanded(null)
+    setReviewShared(false)
     requestAnimationFrame(() => main.current?.focus())
   }
   function add() {
@@ -163,6 +176,19 @@ export default function App() {
   }
   async function rate(id: string, mode: Mode, rating: Rating) {
     return update((repo) => repo.rate(id, mode, rating))
+  }
+
+  let sharedPreview: SharedLibraryPreview | null = null
+  let sharedWarning = ''
+  if (data && published.library) {
+    try {
+      sharedPreview = previewSharedLibrary(published.library, data)
+    } catch (failure) {
+      sharedWarning =
+        failure instanceof Error
+          ? failure.message
+          : 'The shared library could not be previewed.'
+    }
   }
 
   const categories = data
@@ -316,6 +342,51 @@ export default function App() {
             <>
               {view === 'library' && (
                 <>
+                  {(!data.sharedLibrary ||
+                    published.error ||
+                    sharedWarning ||
+                    (sharedPreview && !sharedPreview.isCurrent)) && (
+                    <section
+                      className="shared-notice"
+                      aria-label="Shared vocabulary"
+                    >
+                      <Icon name="book" size={24} />
+                      <div>
+                        <h2>
+                          {!data.sharedLibrary
+                            ? 'Learn with Akif’s library'
+                            : published.error || sharedWarning
+                              ? 'Shared library needs attention'
+                              : 'Library update available'}
+                        </h2>
+                        <p>
+                          {published.loading
+                            ? 'Checking the published vocabulary…'
+                            : published.error
+                              ? 'The shared library could not be checked. Your own notebook is still available.'
+                              : sharedWarning ||
+                                (sharedPreview
+                                  ? `${sharedPreview.additions.length} additions · ${sharedPreview.updates.length} updates · ${sharedPreview.conflicts.length} conflicts. Your progress stays yours.`
+                                  : 'Shared French vocabulary, with your own independent progress.')}
+                        </p>
+                      </div>
+                      <button
+                        className="secondary"
+                        disabled={busy}
+                        onClick={() => {
+                          navigate('manage')
+                          setReviewShared(!!sharedPreview)
+                        }}
+                      >
+                        {sharedPreview
+                          ? data.sharedLibrary
+                            ? 'Review library update'
+                            : 'Use shared library'
+                          : 'View shared library'}
+                        <Icon name="arrow" size={16} />
+                      </button>
+                    </section>
+                  )}
                   <section className="practice-invitation">
                     <div className="invitation-icon">
                       <Icon name="cards" size={24} />
@@ -581,6 +652,10 @@ export default function App() {
                       setEditing('new')
                     }}
                     busy={busy}
+                    published={published}
+                    onCheckShared={checkShared}
+                    initialSharedOpen={reviewShared}
+                    onSharedClose={() => setReviewShared(false)}
                   />
                 ))}
             </>

@@ -8,6 +8,8 @@ import type {
   Preferences,
   Rating,
   Review,
+  SharedLibrary,
+  SharedLibraryState,
 } from './types'
 
 type ObjectValue = Record<string, unknown>
@@ -365,6 +367,7 @@ export function validateAppData(value: unknown, path = 'data'): AppData {
     'reviews',
     'preferences',
     'initialized',
+    'sharedLibrary',
   ])
   if (obj.initialized !== true)
     fail(
@@ -389,12 +392,78 @@ export function validateAppData(value: unknown, path = 'data'): AppData {
       )
     keys.add(key)
   }
-  return {
+  const result: AppData = {
     expressions,
     reviews,
     preferences: validatePreferences(obj.preferences, `${path}.preferences`),
     initialized: true,
   }
+  if (obj.sharedLibrary !== undefined)
+    result.sharedLibrary = validateSharedLibraryState(
+      obj.sharedLibrary,
+      `${path}.sharedLibrary`,
+    )
+  return result
+}
+
+function sharedFields(obj: ObjectValue, path: string) {
+  return {
+    libraryId: text(obj.libraryId, `${path}.libraryId`, 200),
+    name: text(obj.name, `${path}.name`, 200),
+    revision: number(
+      obj.revision,
+      `${path}.revision`,
+      1,
+      Number.MAX_SAFE_INTEGER,
+      true,
+    ),
+    publishedAt: timestamp(obj.publishedAt, `${path}.publishedAt`),
+    expressions: validateExpressions(obj.expressions, `${path}.expressions`),
+  }
+}
+
+export function validateSharedLibrary(value: unknown): SharedLibrary {
+  const path = 'sharedLibrary'
+  const obj = object(value, path, [
+    'kind',
+    'version',
+    'libraryId',
+    'name',
+    'revision',
+    'publishedAt',
+    'expressions',
+  ])
+  if (obj.kind !== 'petit-shared-library')
+    fail(`${path}.kind`, 'expected "petit-shared-library".')
+  if (obj.version !== 1)
+    fail(`${path}.version`, 'unsupported schema version; expected 1.')
+  return {
+    kind: 'petit-shared-library',
+    version: 1,
+    ...sharedFields(obj, path),
+  }
+}
+
+function validateSharedLibraryState(
+  value: unknown,
+  path: string,
+): SharedLibraryState {
+  const obj = object(value, path, [
+    'libraryId',
+    'name',
+    'revision',
+    'publishedAt',
+    'expressions',
+    'deletedIds',
+  ])
+  const fields = sharedFields(obj, path)
+  const deletedIds = array(obj.deletedIds, `${path}.deletedIds`, 100_000).map(
+    (id, i) => text(id, `${path}.deletedIds[${i}]`, 200),
+  )
+  if (new Set(deletedIds).size !== deletedIds.length)
+    fail(`${path}.deletedIds`, 'IDs must be unique.')
+  // Baseline and tombstones are historical publisher data, not local foreign keys.
+  return { ...fields, deletedIds }
 }
 
 export function validateLesson(value: unknown): LessonImport {

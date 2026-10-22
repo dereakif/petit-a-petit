@@ -14,6 +14,7 @@ interface Repository {
   savePreferences(p: Preferences): Promise<AppData>
   rate(id: string, mode: Mode, rating: Rating, now?: Date): Promise<AppData>
   applyLesson(lesson: LessonImport, policy: 'skip' | 'update', allowDuplicates: boolean): Promise<AppData>
+  applySharedLibrary(library: SharedLibrary, choices: Record<string, 'keep' | 'shared' | 'skip' | 'add' | 'restore'>, token: string): Promise<AppData>
   restore(backup: Backup): Promise<AppData>
   close(): void
 }
@@ -126,6 +127,7 @@ interface AppData {
   reviews: Review[]
   preferences: Preferences
   initialized: true
+  sharedLibrary?: SharedLibraryState
 }
 ```
 
@@ -177,6 +179,94 @@ Each import is a single transaction against the **latest** saved state. File ord
 | No conflict                                                    | Add expression                                                                 |
 
 `allowDuplicates` permits duplicate **text**, never duplicate IDs. To update progress-bearing content, reuse its original ID. Existing reviews/preferences are preserved; added expressions have no reviews. Imports do not delete expressions absent from the file. A preview is a snapshot; another tab can change state before apply, which resolves conflicts again atomically.
+
+## Shared vocabulary libraries
+
+This is an explicit preview/apply domain API; loading the repository does not fetch or subscribe to any source. UI and publication are separate concerns. Public exports from `src/data/index.ts`:
+
+```ts
+const SHARED_LIBRARY_ID = 'akif-french'
+const SHARED_LIBRARY_NAME = 'Akif’s French library'
+
+interface SharedLibrary {
+  kind: 'petit-shared-library'
+  version: 1
+  libraryId: string
+  name: string
+  revision: number
+  publishedAt: string
+  expressions: Expression[]
+}
+
+interface SharedLibraryState {
+  libraryId: string
+  name: string
+  revision: number
+  publishedAt: string
+  expressions: Expression[] // last publisher snapshot, NOT local vocabulary
+  deletedIds: string[] // persistent local tombstones, unique IDs
+}
+
+interface SharedLibraryPreview {
+  additions: Expression[]
+  updates: Expression[]
+  unchanged: Expression[]
+  conflicts: Array<{ incoming: Expression; local: Expression }>
+  duplicates: Array<{ incoming: Expression; local: Expression }>
+  deleted: Expression[]
+  removed: Expression[]
+  token: string
+  isCurrent: boolean
+}
+
+type SharedLibraryChoice = 'keep' | 'shared' | 'skip' | 'add' | 'restore'
+
+parseSharedLibrary(text: string): SharedLibrary
+validateSharedLibrary(value: unknown): SharedLibrary
+createSharedLibrary(data: AppData, revision: number, now?: Date): SharedLibrary
+previewSharedLibrary(library: SharedLibrary, data: AppData): SharedLibraryPreview
+```
+
+### Validation and compatibility
+
+Shared envelopes/state are strict at every nested level, reusing expression, calendar/timezone and safe audio validation (including version-1 bilingual compatibility). `libraryId` and `name` are nonblank strings of at most 200 characters. `revision` is a positive safe integer, up to `Number.MAX_SAFE_INTEGER`. `publishedAt` is an ISO timestamp with seconds and timezone. Each expression collection has unique IDs and the usual 10,000-expression limit. `deletedIds` holds at most 100,000 unique nonblank IDs, each at most 200 characters. Unknown fields, learning data in a feed, wrong kinds/versions, unsafe URLs, malformed timestamps, and malformed nested values reject rather than sanitize.
+
+Parsing/validation may accept any valid library ID; preview and apply require the configured `akif-french` ID and reject a mismatch with an existing subscription. A foreign subscription restored from backup is valid data, but cannot be silently switched to the configured source.
+
+`AppData.sharedLibrary` is **optional**. Absent or direct-input `undefined` metadata normalizes to no property at all; existing version-1 fixtures/backups retain their shape. Full `petit-backup` version-1 exports/restores include and validate metadata when present, without changing the backup kind/version. Lesson exports and shared-library exports contain **no** reviews, history, due dates, preferences, subscription state, or tombstones. Shared exports always use the fixed configured ID/name, the supplied revision, and `now` (default current time); expressions are detached canonical objects. They publish current local vocabulary, not the previous baseline.
+
+Baseline expressions and tombstones are historical publisher information, not foreign keys into local vocabulary. A baseline may contain skipped/deleted entries; a tombstone may refer to an entry absent from the current feed. Reviews reference **only local expressions**, never the baseline. Manual saves, generic lesson imports, preference writes and ratings retain metadata. Generic lesson import merging remains unchanged; its edits are subsequently visible to the three-way shared comparison.
+
+### Preview and revisions
+
+Comparisons include all canonical expression fields, including timestamps, recordings, optional notes, and ordered tags. Object field order is irrelevant; French normalization is used only for duplicate detection, never for rewriting displayed text. Publisher snapshot comparison ignores expression array order but includes `libraryId`, name, revision, `publishedAt`, and complete canonical expressions.
+
+- Older revisions reject. The same revision must have exactly the saved publisher payload; changing content, name, or publication time requires a new revision. A valid same-revision feed sets `isCurrent: true` but can still be explicitly reapplied, including to restore tombstones or add previously skipped duplicates.
+- Tombstoned incoming IDs appear in `deleted` before any other classification. They never reappear automatically, even after publisher removal and readdition.
+- Matching local/incoming IDs: exact matches are `unchanged`. If incoming still equals the baseline, classify `unchanged` and retain local edits. If incoming changed and local still equals baseline, classify as safe `updates`. If both changed, classify `conflicts`, unless local already equals incoming.
+- On first follow, an exact local/incoming ID match is unchanged. An untouched canonical stock seed with that ID is safe to update. Every other nonmatching existing ID is a conflict, including personal entries. An ID collision never creates a new identity.
+- New IDs with different-ID matching normalized French appear in `duplicates`, not automatic merges. Preview also detects duplicates against earlier prospective additions within the feed. Other new IDs are `additions`.
+- Baseline entries absent from the new publisher feed appear in `removed`; they are **not** deleted from local vocabulary and their reviews remain untouched.
+
+The token is an opaque exact canonical snapshot of current local expressions plus shared state (baseline and tombstones), excluding reviews/preferences. Treat it as an in-memory optimistic-concurrency token, not a secret or a compact digest. Expression/baseline array ordering and tombstone ordering are ignored. Any intervening vocabulary/subscription change invalidates it; concurrent ratings and preference changes do not. A stale-token error instructs callers to reload local data and refresh the preview.
+
+### Apply choices and atomicity
+
+Call `repository.applySharedLibrary(library, choices, preview.token)`. Choice keys are **incoming IDs**, never normalized French or local duplicate IDs:
+
+| Preview category                    | Accepted choice         | Default                                                    |
+| ----------------------------------- | ----------------------- | ---------------------------------------------------------- |
+| `additions`, `updates`, `unchanged` | No choice key permitted | Automatically add/update, or preserve unchanged local text |
+| `conflicts`                         | `keep` or `shared`      | None; every conflict requires explicit resolution          |
+| `duplicates`                        | `skip` or `add`         | `skip`                                                     |
+| `deleted`                           | `skip` or `restore`     | `skip`                                                     |
+| `removed` / unknown IDs             | No choice key permitted | Retain local entries and learning data                     |
+
+`shared` replaces only the conflicted expression under its existing ID. `add` creates the incoming duplicate under its publisher ID and never transfers the existing entry's reviews. `restore` reinstates the incoming expression and removes its tombstone; previously deleted reviews are not recreated. All automatic/explicit changes preserve reviews, due dates, histories, preferences, and daily-introduction counts. Shared apply never rates expressions.
+
+The full feed/options are validated and detached before opening a write transaction. Inside the same serialized IndexedDB store transaction, apply loads the latest state, checks the token, recalculates the preview, validates category-specific choices and all required conflict resolutions, and validates the final candidate before writing. New normalized-French collision pairs are rejected with a resolve/refresh instruction unless the exact incoming/local duplicate pair was explicitly approved with `add`. Pre-existing collision pairs remain allowed. This final check catches collisions caused by combinations of updates, additions, restores, and choices; feeds with multiple duplicate partners can require local resolution rather than blanket permission. Any validation/storage failure aborts the whole transaction, including baseline changes.
+
+After success, the baseline always becomes the complete publisher snapshot, even for kept conflicts, skipped duplicates, or tombstones; all tombstones persist except explicit restores. This means future publisher-unchanged entries preserve local choices without repeatedly prompting. `deleteExpression(id)` adds a unique tombstone when the current baseline contains that ID, then performs its existing local deletion and all-mode review cleanup. Source removals never remove tombstones. Deletions before subscribing add no metadata; no background operation imports anything without an explicit apply.
 
 ## Backup export/restore
 
@@ -243,4 +333,4 @@ After installing the project's dev tools plus `fake-indexeddb` and Bun types, ru
 bun test tests/data.test.ts
 ```
 
-Tests exercise bilingual seeds/example content, old DB/lesson/backup and mixed-format migrations, missing translations and optional notes, conflicting legacy/new text, canonical-only exports, one-time load persistence and atomic migration failures, seed deletion/reopening, literal untrusted text, URL validation, schema failures at nested paths, lesson preview/conflicts and progress preservation, backup round trips/atomic replacement, scheduling intervals and ordering, local-day distinct caps, early ratings, input isolation, concurrent writes across connections, daily-cap races, and injected storage failures. No browser network or audio service is required.
+Tests exercise bilingual seeds/example content, old DB/lesson/backup and mixed-format migrations, missing translations and optional notes, conflicting legacy/new text, canonical-only exports, one-time load persistence and atomic migration failures, seed deletion/reopening, literal untrusted text, URL validation, schema failures at nested paths, lesson preview/conflicts and progress preservation, backup round trips/atomic replacement, scheduling intervals and ordering, local-day distinct caps, early ratings, input isolation, concurrent writes across connections, daily-cap races, and injected storage failures. Shared-library tests additionally cover first-follow seed reconciliation, three-way conflicts and explicit choices, normalized duplicates/stable IDs, tombstones across reload/removal/readdition, explicit restore, source removals preserving progress, revision rollback and same-revision tampering, stale cross-connection previews and simultaneous applies, ratings/preferences surviving apply, collision rejection, optional metadata backup round trips, learning-data-free exports, input isolation, and atomic write failures. No browser network or audio service is required.

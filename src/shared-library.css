@@ -1,0 +1,217 @@
+.shared-notice {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 20px 22px;
+  margin-bottom: 22px;
+  border: 1px solid #d4dfcc;
+  background: #f0f5e9;
+  border-radius: 10px;
+  color: #42603b;
+}
+
+.shared-notice > svg {
+  flex: none;
+}
+
+.shared-notice h2 {
+  font:
+    600 14px/1.6 'DM Sans',
+    sans-serif;
+  letter-spacing: 0;
+}
+
+.shared-notice p {
+  font-size: 12px;
+  color: #5f6e54;
+  margin-top: 5px;
+}
+
+.shared-notice .secondary {
+  margin-left: auto;
+  flex: none;
+  white-space: nowrap;
+}
+
+.shared-library-panel .muted {
+  color: #5f6e54;
+}
+
+.shared-library-panel > p {
+  font-size: 13px;
+  color: #5f6e54;
+  line-height: 1.8;
+}
+
+.shared-library-panel .shared-source-status {
+  margin-top: 16px;
+  font-weight: 550;
+  color: #395a3d;
+}
+
+.shared-library-panel > .error,
+.shared-library-panel > .success {
+  margin-top: 16px;
+}
+
+.shared-library-panel .shared-checked {
+  margin-top: 13px;
+  font-size: 11px;
+}
+
+.shared-library-panel code {
+  font-size: 11px;
+  overflow-wrap: anywhere;
+}
+
+.shared-library-panel label {
+  margin-top: 12px;
+}
+
+.shared-preview > p {
+  line-height: 1.8;
+}
+
+.shared-preview > .small {
+  margin-top: 13px;
+}
+
+.shared-expression-list {
+  border-bottom: 1px solid #e0e7d8;
+  padding: 5px 0;
+}
+
+.shared-expression-list summary {
+  font-size: 12px;
+  color: #42603b;
+}
+
+.shared-expression-list .preview-list {
+  max-height: 400px;
+}
+
+.shared-decisions {
+  margin-top: 24px;
+}
+
+.shared-decisions > p {
+  margin-top: 9px;
+}
+
+.shared-decision {
+  display: block;
+  margin-top: 15px;
+  border-top: 1px solid #dfe7d6;
+  padding-top: 14px;
+}
+
+.shared-decision strong {
+  font-size: 15px;
+  color: #365039;
+}
+
+.shared-decision select {
+  font-size: 13px;
+  min-height: 44px;
+}
+
+.shared-decision > p {
+  margin-top: 7px;
+  overflow-wrap: anywhere;
+}
+
+.shared-decision summary {
+  font-size: 12px;
+}
+
+.shared-comparison {
+  margin-top: 15px;
+  padding: 15px;
+  border: 1px solid #dce5d3;
+  border-radius: 7px;
+  background: #fff;
+}
+
+.shared-comparison h4 {
+  font-size: 12px;
+  margin-bottom: 12px;
+  color: #34553a;
+}
+
+.shared-comparison dl {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.shared-comparison dt {
+  font-size: 10px;
+  color: #5f6e54;
+  font-weight: 600;
+  margin-top: 12px;
+}
+
+.shared-comparison dd {
+  margin: 3px 0 0;
+  font-size: 12px;
+  color: #344a35;
+  white-space: pre-wrap;
+}
+
+.shared-publishing {
+  margin-top: 24px;
+  border-top: 1px solid #e2e8dc;
+  padding-top: 10px;
+}
+
+.shared-publishing > summary {
+  font-size: 12px;
+  color: #4e6545;
+}
+
+.shared-publishing > p {
+  font-size: 12px;
+  color: #5f6e54;
+  line-height: 1.9;
+}
+
+.shared-publishing .checkbox-label {
+  font-weight: 450;
+  font-size: 12px;
+}
+
+@media (max-width: 680px) {
+  .shared-notice {
+    flex-wrap: wrap;
+    padding: 18px;
+    gap: 12px;
+  }
+
+  .shared-notice > svg {
+    display: none;
+  }
+
+  .shared-notice .secondary {
+    margin-left: 0;
+    min-height: 44px;
+  }
+
+  .shared-notice p {
+    font-size: 12px;
+  }
+
+  .shared-preview {
+    padding: 17px 14px;
+  }
+
+  .shared-decision select {
+    font-size: 16px;
+  }
+
+  .shared-publishing .button-row > button {
+    max-width: 100%;
+  }
+
+  .shared-comparison {
+    padding: 12px;
+  }
+}

@@ -11,6 +11,10 @@ export type {
   Rating,
   Repository,
   Review,
+  SharedLibrary,
+  SharedLibraryState,
+  SharedLibraryPreview,
+  SharedLibraryChoice,
 } from './types'
 export { defaultPreferences, normalize } from './types'
 export { seedExpressions } from './seeds'
@@ -23,4 +27,11 @@ export {
   createLesson,
   previewLesson,
 } from './imports'
-export { validateAudioUrl } from './validation'
+export { validateAudioUrl, validateSharedLibrary } from './validation'
+export {
+  SHARED_LIBRARY_ID,
+  SHARED_LIBRARY_NAME,
+  parseSharedLibrary,
+  createSharedLibrary,
+  previewSharedLibrary,
+} from './shared.ts'

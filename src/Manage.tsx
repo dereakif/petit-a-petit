@@ -9,6 +9,8 @@ import {
 import type { AppData, Backup, LessonImport, Repository } from './data'
 import type { AudioController } from './audio'
 import { Icon } from './components'
+import SharedLibraryPanel from './SharedLibraryPanel'
+import type { PublishedLibrary } from './shared-library'
 
 type Update = (
   action: (repo: Repository) => Promise<AppData>,
@@ -32,12 +34,20 @@ export default function Manage({
   update,
   onAdd,
   busy,
+  published,
+  onCheckShared,
+  initialSharedOpen,
+  onSharedClose,
 }: {
   data: AppData
   audio: AudioController
   update: Update
   onAdd: () => void
   busy: boolean
+  published: PublishedLibrary
+  onCheckShared: () => Promise<unknown>
+  initialSharedOpen: boolean
+  onSharedClose: () => void
 }) {
   const [text, setText] = useState('')
   const [lesson, setLesson] = useState<LessonImport | null>(null)
@@ -132,6 +142,18 @@ export default function Manage({
         </p>
       )}
       <div className="manage-main">
+        <SharedLibraryPanel
+          data={data}
+          published={published}
+          update={(action) => {
+            audio.stop()
+            return update(action)
+          }}
+          onCheck={onCheckShared}
+          busy={busy}
+          initialOpen={initialSharedOpen}
+          onClose={onSharedClose}
+        />
         <section className="panel">
           <div className="section-heading">
             <div>

@@ -36,7 +36,43 @@ Deployment target: **https://dereakif.github.io/petit-a-petit/**, from the `main
 
 Vite’s `base` is `/petit-a-petit/` in development, builds, and preview. Public-file download links use `import.meta.env.BASE_URL`. If the repository name changes, or you switch to the root profile site or a custom domain, update `vite.config.ts` and the browser-test base URL accordingly. There are no path-based client-side routes requiring a Pages 404 workaround.
 
-Deployment publishes the application, not your browser’s vocabulary or review history. Browser data is never uploaded by this workflow. Any content explicitly committed under `public/` or bundled into the app is public, so do not commit personal backup files or private recordings.
+Deployment publishes the application and the intentionally public vocabulary feed at [`public/shared-library.json`](public/shared-library.json), not your browser database or review history. Browser data is never uploaded by this workflow. The initial feed contains 13 expressions and their owner-approved public recording links. Any content explicitly committed under `public/` or bundled into the app is public, so do not commit personal backup files or private recordings.
+
+## Publish the shared French library
+
+The shared feed is **Akif’s French library** (`libraryId: akif-french`). It shares vocabulary, bilingual situations/notes, and optional recording links—not either person’s reviews, schedules, preferences, or shared-library baseline/deletion metadata. Progress stays independent in each browser. There are no accounts and this is **not cloud sync**; both people still need browser backups.
+
+### Owner’s daily flow
+
+1. Edit or add vocabulary in the app. **Keep stable expression IDs** when correcting existing entries; assign a new ID only for a genuinely new expression.
+2. In **Manage → Export shared library**, download the shared-library JSON. Downloading an export **does not publish anything**.
+3. From the repository, publish the downloaded file:
+
+   ```sh
+   bun run publish:library /absolute/path/to/shared-library.json
+   ```
+
+4. Preview the changes with `git diff -- public/shared-library.json`. Check the vocabulary and recording links carefully: **the entire feed and all its links are public**. Do not publish credentials, private text, or private recording URLs.
+5. Commit the intended `public/shared-library.json` change and push to `main`. The existing Pages workflow builds and deploys the public file with the app. The publisher itself never commits, pushes, calls GitHub, or requests a token.
+6. Your girlfriend opens the app, sees the update banner, chooses **Review library update**, reviews the preview, and explicitly applies the library update. She does not need to download or manage JSON files.
+
+In Manage, expand **Publish your vocabulary (for the library owner)** and acknowledge that the export may be published publicly before downloading. The repository already includes the first revision: 13 expressions extracted from the validated bilingual backup, without its private learning data. Your local notebook is never automatically replaced with that file.
+
+The publisher requires an explicit local source path; it never searches Downloads or fetches a URL. It accepts a shared-library export, vocabulary/lesson export, or full backup. **The complete source is validated before extracting only expressions**, including all reviews, settings, and optional baseline metadata in a backup; none of that private state is copied to the feed. Keep backups outside the repository. All three optional audio URL fields use the domain’s HTTP(S) safety validation, without fetching recordings.
+
+The target defaults to this project’s `public/shared-library.json`, regardless of the caller’s working directory. The current public file must also pass runtime validation and have the configured library ID. Each successful publication uses that file’s revision plus one (or revision 1 if absent), the fixed library ID/name, and the current publication timestamp. Incoming revisions and names never determine the published revision/name; an unconfigured source is rejected. The source file is not modified. Validation, temporary-write, or rename failures leave the previous target unchanged; replacement uses a same-directory temporary file and atomic rename, with cleanup.
+
+`bun run validate:shared` validates the full published envelope, expressions, and configured library ID, reports expression count/revision, and exits nonzero on errors. Every `bun run build` runs this check first, including GitHub Actions deployment, so a malformed public feed blocks deployment.
+
+### Recipient’s update flow
+
+- On app open, the browser checks the same-origin public `shared-library.json` under the deployment base path. This check does **not** merge vocabulary or progress. The first-use banner’s **Use shared library** button navigates to **Manage** and opens a preview, never an automatic merge.
+- The **Shared library** section in Manage offers **Check for updates** and **Review shared library**. An available-update banner offers **Review library update**. Before applying, the preview shows additions/updates and asks for choices where needed: **Keep my version / Use shared version** for conflicts; **Skip / Add separate** for different-ID French duplicates; **Keep deleted / Restore expression** for locally deleted expressions.
+- **Apply library update** is the explicit commit step. Cancelling or just opening a preview changes nothing. Publisher removals keep local expressions and their reviews. A locally deleted shared expression does not return unless the recipient explicitly chooses **Restore expression**.
+- Stable IDs connect corrections to the same expression and its existing learning history. Each browser retains its own progress/settings; updates do not import the owner’s progress or overwrite the recipient’s learning records.
+- Revision and no-change rules belong to the shared-library domain: an older revision is rejected; an identical already-applied revision is current; a changed payload at the same revision is rejected. Checks bypass the browser cache, accept only the same-origin configured source, time out after 15 seconds, and enforce a 10 MB limit. A failed check leaves the notebook intact. GitHub’s CDN can take time to refresh after deployment; recheck if the feed has not refreshed. Do not hand-edit the feed without incrementing its revision through the publisher.
+
+There is no admin password or GitHub token in the frontend. Authority to publish comes from permission to write to the GitHub repository. An export is only a local download; only reviewing, committing, and pushing the feed makes it public on Pages.
 
 ## Your notebook
 
@@ -83,6 +119,20 @@ A vocabulary export is also a lesson import. It excludes progress and settings.
 
 ```json
 {
+  "kind": "petit-shared-library",
+  "version": 1,
+  "libraryId": "akif-french",
+  "name": "Akif’s French library",
+  "revision": 1,
+  "publishedAt": "2026-10-23T12:00:00.000Z",
+  "expressions": []
+}
+```
+
+A shared-library export also excludes private state. Its revision is a positive integer; the publisher assigns the next revision from the existing public feed, not from the downloaded export.
+
+```json
+{
   "kind": "petit-backup",
   "version": 1,
   "exportedAt": "2026-10-22T12:00:00.000Z",
@@ -105,7 +155,7 @@ The three recording URL fields are optional additions to the existing version-1 
 4. Expand **Restore a full backup**, select the file, and inspect its export time and counts.
 5. Type **REPLACE** and choose **Replace with backup**. The complete file is validated before vocabulary, all review histories, and preferences are atomically replaced.
 
-**Restore replaces; it does not merge. This is manual transfer, not automatic synchronization.** Mac and iPhone progress do not automatically sync. Browser data belongs to the current browser/profile/device/origin and may be cleared or evicted. Private-browsing storage can be temporary. Backups matter. There is no server copy or deleted-expression recovery without a backup.
+**Restore replaces; it does not merge. This is manual transfer, not automatic synchronization.** Mac and iPhone progress do not automatically sync. Browser data belongs to the current browser/profile/device/origin and may be cleared or evicted. Private-browsing storage can be temporary. Backups matter. There is no private server copy. Backups are needed to recover personal vocabulary and progress; a still-published shared expression can be restored explicitly through the shared-library preview once that UI is integrated.
 
 ## Audio
 
@@ -131,9 +181,10 @@ Dates are elapsed-time intervals; introduction budgets use local calendar days, 
 ## Verification
 
 ```sh
-bun run test                 # 68 domain / IndexedDB tests
+bun run test                 # 90 data/IndexedDB tests + 51 publishing tests
+bun run validate:shared      # validate the public vocabulary-only feed
 bunx playwright install chromium
-bun run test:browser         # 34 browser tests, including bilingual cards, Pages paths, and WCAG checks
+bun run test:browser         # 46 browser tests, including shared updates and WCAG checks
 bun run lint
 bun run typecheck
 bun run build
@@ -145,7 +196,7 @@ If using an already-installed Chromium binary instead of Playwright’s expected
 PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH=/absolute/path/to/chrome bun run test:browser
 ```
 
-Browser tests use mocked French speech and recordings: answer secrecy in all modes, asynchronous/missing voices, synthesis/recording failures, explicit fallback, rating persistence and write failures, Again requeue, extra-practice isolation, add/edit/delete, import cancellation/atomicity/history preservation, backup replacement, keyboard focus, 390×844 mobile overflow, loading/empty/storage-error states, and automated WCAG 2 AA checks. Playwright builds the app and starts/stops a local production-preview server automatically, testing the same `/petit-a-petit/` subpath used by GitHub Pages. A deployment regression test checks bundled JavaScript, the favicon, and downloading the example lesson. Screenshots are written to ignored `test-results/`.
+Browser tests use mocked French speech and recordings: answer secrecy in all modes, asynchronous/missing voices, synthesis/recording failures, explicit fallback, rating persistence and write failures, Again requeue, extra-practice isolation, add/edit/delete, import cancellation/atomicity/history preservation, backup replacement, keyboard focus, 390×844 mobile overflow, loading/empty/storage-error states, and automated WCAG 2 AA checks. Playwright builds the app and starts/stops a local production-preview server automatically, testing the same `/petit-a-petit/` subpath used by GitHub Pages. Shared-library browser tests cover opt-in, progress-preserving updates, explicit conflicts, duplicates, persistent deletion choices, publisher removals, invalid/network responses, stale previews, backup metadata, public-only exports, and mobile accessibility. Deployment checks cover bundled JavaScript, the favicon, the published feed path, and downloading the example lesson. Screenshots are written to ignored `test-results/`.
 
 **Manual device checks still needed:** real iPhone Safari and macOS voice availability/quality; speaker and slower playback after a tap; silent-mode/device audio routing; real remote recording playback and network failures; switching views during playback; Files download/restore on iPhone; VoiceOver and large-text/zoom ergonomics. Chromium viewport tests are not real iPhone testing, and mocked speech does not validate a device’s provider.
 
@@ -155,7 +206,11 @@ Browser tests use mocked French speech and recordings: answer secrecy in all mod
 - `src/data/repository.ts`: asynchronous repository boundary and atomic native IndexedDB transactions. Storage failures surface to the UI; no silent in-memory fallback.
 - `src/data/validation.ts`, `imports.ts`: runtime schemas, safe URLs, detached exports, preview and explicit merge policies.
 - `src/data/scheduler.ts`: small, deterministic review rules and global introduction budget.
+- `src/data/shared.ts`: shared-library envelopes, revision checks, previews, and explicit update choices.
+- `scripts/publish-library.ts`, `scripts/validate-shared-library.ts`: local-only atomic feed publishing and runtime validation; no repository credentials or network requests.
 - `src/audio.ts`: French voice lifecycle, explicit playback, cancellation, errors, recording fallback.
+- `src/data/shared.ts`, `src/shared-library.ts`, `src/SharedLibraryPanel.tsx`: revisioned publisher snapshots, safe local merges, same-origin checks, and explicit update previews.
+- `scripts/publish-library.ts`, `scripts/validate-shared-library.ts`: vocabulary-only publication and build-time feed validation.
 - `src/App.tsx`, `components.tsx`, `Practice.tsx`, `Manage.tsx`: focused views and reusable form/audio components.
 
 The repository boundary can support a future authenticated sync adapter. There is no cloud authentication or sync implementation in this version.

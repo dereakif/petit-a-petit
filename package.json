@@ -5,11 +5,13 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc -b && vite build",
+    "build": "bun run validate:shared && tsc -b && vite build",
+    "publish:library": "bun scripts/publish-library.ts",
+    "validate:shared": "bun scripts/validate-shared-library.ts",
     "lint": "eslint .",
     "typecheck": "tsc -b",
-    "format": "prettier --write src tests docs README.md *.json *.ts *.js index.html",
-    "test": "bun test tests/data.test.ts",
+    "format": "prettier --write src scripts tests docs README.md *.json *.ts *.js index.html",
+    "test": "bun test tests/data.test.ts tests/publishing.test.ts",
     "test:browser": "playwright test",
     "preview": "vite preview"
   },

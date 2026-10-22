@@ -42,7 +42,41 @@ export interface AppData {
   reviews: Review[]
   preferences: Preferences
   initialized: true
+  sharedLibrary?: SharedLibraryState
 }
+
+export interface SharedLibrary {
+  kind: 'petit-shared-library'
+  version: 1
+  libraryId: string
+  name: string
+  revision: number
+  publishedAt: string
+  expressions: Expression[]
+}
+
+export interface SharedLibraryState {
+  libraryId: string
+  name: string
+  revision: number
+  publishedAt: string
+  expressions: Expression[]
+  deletedIds: string[]
+}
+
+export interface SharedLibraryPreview {
+  additions: Expression[]
+  updates: Expression[]
+  unchanged: Expression[]
+  conflicts: Array<{ incoming: Expression; local: Expression }>
+  duplicates: Array<{ incoming: Expression; local: Expression }>
+  deleted: Expression[]
+  removed: Expression[]
+  token: string
+  isCurrent: boolean
+}
+
+export type SharedLibraryChoice = 'keep' | 'shared' | 'skip' | 'add' | 'restore'
 
 export interface LessonImport {
   kind: 'petit-lesson'
@@ -75,6 +109,11 @@ export interface Repository {
     lesson: LessonImport,
     policy: 'skip' | 'update',
     allowDuplicates: boolean,
+  ): Promise<AppData>
+  applySharedLibrary(
+    library: SharedLibrary,
+    choices: Record<string, SharedLibraryChoice>,
+    token: string,
   ): Promise<AppData>
   restore(backup: Backup): Promise<AppData>
   close(): void
