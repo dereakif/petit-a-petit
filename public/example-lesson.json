@@ -1,0 +1,60 @@
+{
+  "kind": "petit-lesson",
+  "version": 1,
+  "expressions": [
+    {
+      "id": "lesson-2-merci",
+      "french": "Merci",
+      "english": "Thank you",
+      "turkish": "Teşekkür ederim",
+      "pronunciationEn": "mehr-SEE",
+      "pronunciationTr": "mersi",
+      "situation": "Thank someone who has helped you or handed you something.",
+      "category": "Politeness",
+      "tags": [
+        "basics",
+        "lesson-2"
+      ],
+      "lesson": 2,
+      "createdAt": "2026-10-23T09:00:00.000Z",
+      "updatedAt": "2026-10-23T09:00:00.000Z",
+      "pronunciationNote": "Capital letters mark the emphasized practice syllable, not English-style lexical stress. Keep the French r gentle at the back of the throat."
+    },
+    {
+      "id": "lesson-2-oui",
+      "french": "Oui",
+      "english": "Yes",
+      "turkish": "Evet",
+      "pronunciationEn": "WEE",
+      "pronunciationTr": "ui",
+      "situation": "Answer a simple question affirmatively.",
+      "category": "Essentials",
+      "tags": [
+        "basics",
+        "lesson-2"
+      ],
+      "lesson": 2,
+      "createdAt": "2026-10-23T09:00:00.000Z",
+      "updatedAt": "2026-10-23T09:00:00.000Z",
+      "pronunciationNote": "One short syllable: move directly from w to ee. Capital letters are a practice cue, not a direction to shout."
+    },
+    {
+      "id": "lesson-2-non",
+      "french": "Non",
+      "english": "No",
+      "turkish": "Hayır",
+      "pronunciationEn": "NOHN",
+      "pronunciationTr": "non",
+      "situation": "Answer a simple question negatively; add merci when politely declining.",
+      "category": "Essentials",
+      "tags": [
+        "basics",
+        "lesson-2"
+      ],
+      "lesson": 2,
+      "createdAt": "2026-10-23T09:00:00.000Z",
+      "updatedAt": "2026-10-23T09:00:00.000Z",
+      "pronunciationNote": "The ending n marks a nasal vowel: do not pronounce a separate final n. Keep one pure vowel, without an English oh glide."
+    }
+  ]
+}

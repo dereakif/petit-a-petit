@@ -1,0 +1,113 @@
+import type { Expression } from './types'
+
+const timestamp = '2026-01-01T00:00:00.000Z'
+const commonNote =
+  'Capital letters are reading aids, not instructions for strong English word stress. French stress normally falls at the end of a phrase. Nasal n marks a nasal vowel, not a separate pronounced n. Do not add an English “ay” glide to é: keep one pure vowel. French r is made gently at the back of the throat. ü represents French u: round your lips for “oo” while saying “ee” (close to Turkish ü).'
+
+function seed(
+  id: string,
+  french: string,
+  english: string,
+  turkish: string,
+  pronunciationEn: string,
+  pronunciationTr: string,
+  situation: string,
+  category: string,
+  note = '',
+): Expression {
+  return {
+    id: `seed-${id}`,
+    french,
+    english,
+    turkish,
+    pronunciationEn,
+    pronunciationTr,
+    situation,
+    category,
+    tags: ['basics', 'lesson-1'],
+    lesson: 1,
+    createdAt: timestamp,
+    updatedAt: timestamp,
+    pronunciationNote: `${commonNote}${note ? ` ${note}` : ''}`,
+  }
+}
+
+export const seedExpressions: Expression[] = [
+  seed(
+    'bonjour',
+    'Bonjour',
+    'Hello / Good morning',
+    'Merhaba / Günaydın',
+    'bohn-ZHOOR',
+    'bonjur',
+    'Greet someone during the day, for example when entering a shop.',
+    'Greetings',
+    'The on is nasal: do not finish it with a hard n.',
+  ),
+  seed(
+    'bonsoir',
+    'Bonsoir',
+    'Good evening',
+    'İyi akşamlar',
+    'bohn-SWAHR',
+    'bonsuar',
+    'Greet someone in the evening.',
+    'Greetings',
+    'The on is nasal; soir is one syllable.',
+  ),
+  seed(
+    'desole',
+    'Désolé',
+    'Sorry',
+    'Üzgünüm / Pardon',
+    'day-zoh-LAY',
+    'dezole',
+    'Apologize for a small mistake.',
+    'Politeness',
+    'Use désolée in writing for a feminine speaker. The day and LAY spellings are approximations: say pure é vowels without an English ay glide.',
+  ),
+  seed(
+    'anglais',
+    'Anglais',
+    'English',
+    'İngilizce',
+    'ahn-GLAY',
+    'angle',
+    'Name the English language, for example when asking which language someone speaks.',
+    'Languages',
+    'The an is nasal. The final s is silent; GLAY ends in a pure vowel, not an ay glide.',
+  ),
+  seed(
+    'sil-vous-plait',
+    'S’il vous plaît',
+    'Please',
+    'Lütfen',
+    'seel voo PLEH',
+    'sil vu ple',
+    'Add politeness to a request when addressing a stranger or more than one person.',
+    'Politeness',
+    'The final t in plaît is silent.',
+  ),
+  seed(
+    'excusez-moi',
+    'Excusez-moi',
+    'Excuse me',
+    'Affedersiniz / Pardon',
+    'ehk-skü-zay MWAH',
+    'eksküze mua',
+    'Politely get someone’s attention or pass by them.',
+    'Politeness',
+    'Keep the ü rounded; zay uses a pure é, without an English ay glide.',
+  ),
+  seed(
+    'au-revoir',
+    'Au revoir',
+    'Goodbye',
+    'Hoşça kalın / Görüşürüz',
+    'oh ruh-VWAHR',
+    'o rövuar',
+    'Say goodbye when leaving a shop or ending a conversation.',
+    'Greetings',
+    'Practice backward: vuar → rövuar → o rövuar. Keep the French r gentle; the middle vowel can be very short.',
+  ),
+]
