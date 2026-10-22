@@ -63,6 +63,54 @@ function review(id: string, mode: Mode, at = now): Review {
   return scheduleReview(undefined, id, mode, 'good', at)
 }
 
+function parseItem(value: unknown): Expression {
+  return parseLesson(JSON.stringify({ ...lesson([]), expressions: [value] }))
+    .expressions[0]!
+}
+
+function legacyExpression(
+  item = expression('legacy'),
+): Record<string, unknown> {
+  const result: Record<string, unknown> = {
+    ...item,
+    situation: item.situationEn,
+  }
+  if (item.pronunciationNoteEn !== undefined)
+    result.pronunciationNote = item.pronunciationNoteEn
+  delete result.situationEn
+  delete result.situationTr
+  delete result.pronunciationNoteEn
+  delete result.pronunciationNoteTr
+  return result
+}
+
+// Bypass repository validation to exercise real pre-transition persisted records.
+async function storedState(value?: unknown): Promise<unknown> {
+  const db = await new Promise<IDBDatabase>((resolve, reject) => {
+    const request = indexedDB.open('petit-a-petit', 1)
+    request.onupgradeneeded = () => request.result.createObjectStore('state')
+    request.onsuccess = () => resolve(request.result)
+    request.onerror = () => reject(request.error)
+  })
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(
+      'state',
+      value === undefined ? 'readonly' : 'readwrite',
+    )
+    const store = tx.objectStore('state')
+    const request =
+      value === undefined ? store.get('app') : store.put(value, 'app')
+    tx.oncomplete = () => {
+      db.close()
+      resolve(request.result as unknown)
+    }
+    tx.onabort = () => {
+      db.close()
+      reject(tx.error)
+    }
+  })
+}
+
 beforeEach(() => {
   Object.defineProperty(globalThis, 'indexedDB', {
     value: new IDBFactory(),
@@ -98,14 +146,38 @@ describe('seeds and text safety', () => {
         (item) =>
           item.lesson === 1 &&
           item.turkish &&
-          item.situation &&
+          item.situationEn &&
+          item.situationTr &&
           item.category &&
-          item.pronunciationNote,
+          item.pronunciationNoteEn &&
+          item.pronunciationNoteTr,
       ),
     ).toBe(true)
-    expect(seedExpressions[6]!.pronunciationNote).toContain(
+    expect(seedExpressions[6]!.pronunciationNoteEn).toContain(
       'vuar → rövuar → o rövuar',
     )
+    expect(seedExpressions[6]!.pronunciationNoteTr).toContain(
+      'vuar → rövuar → o rövuar',
+    )
+    expect(seedExpressions.map((item) => item.situationTr)).toEqual([
+      'Gündüz birini selamlarken, örneğin bir dükkâna girerken kullanın.',
+      'Akşam birini selamlarken kullanın.',
+      'Küçük bir hata için özür dilerken kullanın.',
+      'İngilizceden söz ederken, örneğin birinin hangi dili konuştuğunu sorarken kullanın.',
+      'Tanımadığınız birine veya birden fazla kişiye hitap ederken isteğinizi kibarlaştırmak için kullanın.',
+      'Birinin dikkatini kibarca çekmek veya yanından geçmek için kullanın.',
+      'Bir dükkândan ayrılırken veya konuşmayı bitirirken vedalaşmak için kullanın.',
+    ])
+    for (const item of seedExpressions) {
+      expect(item.pronunciationNoteEn).toMatch(
+        /Capital letters.*Nasal n.*French r.*ü/,
+      )
+      expect(item.pronunciationNoteTr).toMatch(
+        /Büyük harfler.*Geniz.*Fransızca r.*ü/,
+      )
+      expect(item.situationTr).not.toBe(item.situationEn)
+      expect(item.pronunciationNoteTr).not.toBe(item.pronunciationNoteEn)
+    }
     expect(
       parseLesson(JSON.stringify(lesson(seedExpressions))).expressions,
     ).toEqual(seedExpressions)
@@ -484,10 +556,400 @@ describe('lesson parsing, preview, and merging', () => {
     expect(example.expressions).toHaveLength(3)
     expect(example.expressions.every((item) => item.lesson === 2)).toBe(true)
     for (const item of example.expressions) {
+      expect(item.situationEn.trim()).not.toBe('')
+      expect(item.situationTr.trim()).not.toBe('')
+      expect(item.pronunciationNoteEn).toBeTruthy()
+      expect(item.pronunciationNoteTr).toBeTruthy()
+      expect(item.situationTr).not.toBe(item.situationEn)
+      expect(item.pronunciationNoteTr).not.toBe(item.pronunciationNoteEn)
+      expect(Object.hasOwn(item, 'situation')).toBe(false)
+      expect(Object.hasOwn(item, 'pronunciationNote')).toBe(false)
       expect(item.audioUrl).toBeUndefined()
       expect(item.femaleAudioUrl).toBeUndefined()
       expect(item.maleAudioUrl).toBeUndefined()
     }
+  })
+})
+
+describe('bilingual metadata and version 1 compatibility', () => {
+  test('old lessons migrate literally without inventing translations or optional notes', () => {
+    const original = expression('old', {
+      situationEn: '  My edited <situation> & context  ',
+      pronunciationNoteEn: '  My own pronunciation note  ',
+      createdAt: '2026-01-01T01:00:00+01:00',
+      updatedAt: '2026-01-02T01:00:00+01:00',
+      audioUrl: 'https://example.com/general.mp3',
+      femaleAudioUrl: 'https://example.com/female.mp3',
+      maleAudioUrl: 'http://example.com/male.mp3',
+    })
+    const old = legacyExpression(original)
+    const before = structuredClone(old)
+    const expected = { ...original, situationTr: '' }
+    delete expected.pronunciationNoteTr
+    expect(parseItem(old)).toEqual(expected)
+    expect(old).toEqual(before)
+    delete old.pronunciationNote
+    delete expected.pronunciationNoteEn
+    expect(parseItem(old)).toEqual(expected)
+    expect(Object.hasOwn(parseItem(old), 'pronunciationNoteTr')).toBe(false)
+  })
+
+  test.each(['old', 'mixed', 'dual'] as const)(
+    '%s version 1 backups retain every ID, timestamp, recording, preference and mode review',
+    async (shape) => {
+      const original = expression('progress', {
+        createdAt: '2026-01-01T01:00:00+01:00',
+        updatedAt: '2026-01-02T01:00:00+01:00',
+        audioUrl: 'https://example.com/general.mp3',
+        femaleAudioUrl: 'https://example.com/female.mp3',
+        maleAudioUrl: 'http://example.com/male.mp3',
+      })
+      const expectedItem = { ...original }
+      const incoming =
+        shape === 'dual' ? { ...original } : legacyExpression(original)
+      if (shape !== 'dual') expectedItem.situationTr = ''
+      if (shape === 'old') delete expectedItem.pronunciationNoteTr
+      if (shape === 'mixed') {
+        delete (incoming as Record<string, unknown>).pronunciationNote
+        incoming.pronunciationNoteEn = original.pronunciationNoteEn
+        incoming.pronunciationNoteTr = original.pronunciationNoteTr
+      }
+      const expected = data([expectedItem])
+      expected.preferences = {
+        voiceURI: 'saved-voice',
+        rate: 0.6,
+        dailyNewLimit: 7,
+      }
+      expected.reviews = ['speaking', 'listening', 'reading'].map((mode) =>
+        review(original.id, mode as Mode),
+      )
+      const raw = {
+        kind: 'petit-backup',
+        version: 1,
+        exportedAt: '2026-10-22T13:00:00+01:00',
+        data: { ...expected, expressions: [incoming] },
+      }
+      const parsed = parseBackup(JSON.stringify(raw))
+      expect(parsed.exportedAt).toBe(raw.exportedAt)
+      expect(parsed.version).toBe(1)
+      expect(parsed.data).toEqual(expected)
+      const repo = await repository(data([]))
+      expect(await repo.restore(parsed)).toEqual(expected)
+      repo.close()
+      expect(await (await repository()).load()).toEqual(expected)
+      expect(await storedState()).toEqual(expected)
+      // Export validation must also migrate unparsed legacy/mixed runtime input.
+      const backup = createBackup(raw.data as unknown as AppData)
+      const exportedLesson = createLesson(raw.data as unknown as AppData)
+      expect(backup.data).toEqual(expected)
+      expect(exportedLesson.expressions).toEqual([expectedItem])
+      for (const output of [parsed, backup, exportedLesson]) {
+        expect(JSON.stringify(output)).not.toMatch(
+          /"(?:situation|pronunciationNote)":/,
+        )
+      }
+    },
+  )
+
+  test('matching legacy and new English text is accepted and removed; Turkish fields win independently', () => {
+    const item = expression('matching')
+    const incoming = {
+      ...item,
+      situation: item.situationEn,
+      pronunciationNote: item.pronunciationNoteEn,
+    }
+    expect(parseItem(incoming)).toEqual(item)
+    const withOnlyTurkish = legacyExpression(item)
+    withOnlyTurkish.situationTr = item.situationTr
+    withOnlyTurkish.pronunciationNoteTr = item.pronunciationNoteTr
+    expect(parseItem(withOnlyTurkish)).toEqual(item)
+  })
+
+  test('either situation can be missing or empty; canonical output always has both strings', () => {
+    const item = expression('partial')
+    for (const missing of ['situationEn', 'situationTr'] as const) {
+      const input: Record<string, unknown> = { ...item }
+      delete input[missing]
+      expect(parseItem(input)).toEqual({ ...item, [missing]: '' })
+      expect(parseItem({ ...item, [missing]: '' })).toEqual({
+        ...item,
+        [missing]: '',
+      })
+    }
+    expect(
+      parseItem({ ...item, situationEn: '  ', situationTr: ' bağlam ' })
+        .situationEn,
+    ).toBe('  ')
+    const noSituations: Record<string, unknown> = { ...item }
+    delete noSituations.situationEn
+    delete noSituations.situationTr
+    for (const input of [
+      noSituations,
+      { ...item, situationEn: '', situationTr: '' },
+      { ...item, situationEn: ' \n', situationTr: '\t' },
+      { ...noSituations, situation: ' ' },
+    ])
+      expect(() => parseItem(input)).toThrow(
+        'provide at least one nonblank situationEn or situationTr',
+      )
+  })
+
+  test('explicit undefined situations and legacy fields are invalid direct input, even with new fields', () => {
+    for (const field of [
+      'situationEn',
+      'situationTr',
+      'situation',
+      'pronunciationNote',
+    ])
+      expect(() =>
+        createLesson(
+          data([{ ...expression('undefined'), [field]: undefined }]),
+        ),
+      ).toThrow(`data.expressions[0].${field}:`)
+  })
+
+  test('notes stay optional, including empty strings, without synthesizing another language', () => {
+    const item = expression('notes')
+    delete item.pronunciationNoteEn
+    delete item.pronunciationNoteTr
+    expect(parseItem(item)).toEqual(item)
+    for (const field of [
+      'pronunciationNoteEn',
+      'pronunciationNoteTr',
+    ] as const) {
+      expect(parseItem({ ...item, [field]: '' })).toEqual({
+        ...item,
+        [field]: '',
+      })
+      expect(parseItem({ ...item, [field]: ' note ' })).toEqual({
+        ...item,
+        [field]: ' note ',
+      })
+      expect(
+        createLesson(data([{ ...item, [field]: undefined }])).expressions,
+      ).toEqual([item])
+    }
+    expect(parseItem({ ...item, pronunciationNote: '' })).toEqual({
+      ...item,
+      pronunciationNoteEn: '',
+    })
+  })
+
+  test.each([
+    ['situation', 4000],
+    ['situationEn', 4000],
+    ['situationTr', 4000],
+    ['pronunciationNote', 8000],
+    ['pronunciationNoteEn', 8000],
+    ['pronunciationNoteTr', 8000],
+  ] as const)(
+    '%s validates types and length atomically even alongside the new fields',
+    async (field, max) => {
+      const repo = await repository(data())
+      const before = await repo.rate('a', 'reading', 'good', now)
+      for (const value of [null, 42, true, [], {}, 'x'.repeat(max + 1)]) {
+        const invalid = { ...expression('bad'), [field]: value }
+        expect(() => parseItem(invalid)).toThrow(
+          `lesson.expressions[0].${field}:`,
+        )
+        await expect(repo.saveExpression(invalid)).rejects.toThrow(
+          `expression.${field}:`,
+        )
+        await expect(
+          repo.applyLesson(
+            { ...lesson([]), expressions: [expression('new'), invalid] },
+            'update',
+            false,
+          ),
+        ).rejects.toThrow(`lesson.expressions[1].${field}:`)
+        const backup = {
+          ...createBackup(before),
+          data: {
+            ...before,
+            expressions: [expression('new'), invalid],
+            reviews: [],
+            preferences: { ...defaultPreferences, rate: 0.5 },
+          },
+        }
+        expect(() => parseBackup(JSON.stringify(backup))).toThrow(
+          `data.expressions[1].${field}:`,
+        )
+        await expect(repo.restore(backup)).rejects.toThrow(
+          `data.expressions[1].${field}:`,
+        )
+        expect(await repo.load()).toEqual(before)
+        expect(await storedState()).toEqual(before)
+      }
+      const boundary = { ...expression('boundary'), [field]: 'x'.repeat(max) }
+      if (field === 'situation') boundary.situationEn = 'x'.repeat(max)
+      if (field === 'pronunciationNote')
+        boundary.pronunciationNoteEn = 'x'.repeat(max)
+      expect(() => parseItem(boundary)).not.toThrow()
+    },
+  )
+
+  test.each(['situation', 'pronunciationNote'] as const)(
+    'conflicting %s rejects parses, exports, saves, imports and restores without partial writes',
+    async (field) => {
+      const repo = await repository(data())
+      const before = await repo.rate('a', 'reading', 'easy', now)
+      for (const value of ['different legacy text', '', 42, null]) {
+        const invalid = { ...expression('a'), [field]: value }
+        const incoming = {
+          ...lesson([]),
+          expressions: [expression('new'), invalid],
+        }
+        const backup = {
+          ...createBackup(before),
+          data: {
+            ...before,
+            expressions: [expression('new'), invalid],
+            reviews: [],
+            preferences: { ...defaultPreferences, rate: 0.5 },
+          },
+        }
+        expect(() => parseLesson(JSON.stringify(incoming))).toThrow(field)
+        expect(() => parseBackup(JSON.stringify(backup))).toThrow(field)
+        expect(() => createBackup(backup.data)).toThrow(field)
+        expect(() => createLesson(backup.data)).toThrow(field)
+        await expect(repo.saveExpression(invalid)).rejects.toThrow(field)
+        await expect(
+          repo.applyLesson(incoming, 'update', false),
+        ).rejects.toThrow(field)
+        await expect(repo.restore(backup)).rejects.toThrow(field)
+        expect(await repo.load()).toEqual(before)
+        expect(await storedState()).toEqual(before)
+      }
+      expect(() =>
+        parseItem({
+          ...expression('conflict'),
+          [field]: 'different legacy text',
+        }),
+      ).toThrow('reconcile both values')
+      // An explicit empty new English field must not silently discard legacy text either.
+      expect(() =>
+        parseItem({
+          ...expression('conflict'),
+          [field]: 'legacy text',
+          [`${field}En`]: '',
+        }),
+      ).toThrow('conflicts with')
+    },
+  )
+
+  test.each(['both', 'situation', 'pronunciationNote'] as const)(
+    'load atomically persists old DB %s fields once, preserving edited seeds and deletions',
+    async (fields) => {
+      const edited = {
+        ...seedExpressions[0]!,
+        english: 'My edited translation',
+        situationEn: 'My own context',
+        situationTr: '',
+        pronunciationNoteEn: 'My own pronunciation note',
+        audioUrl: 'https://example.com/general.mp3',
+        femaleAudioUrl: 'https://example.com/female.mp3',
+        maleAudioUrl: 'http://example.com/male.mp3',
+        updatedAt: '2026-02-01T01:00:00+01:00',
+      }
+      delete edited.pronunciationNoteTr
+      const expected = data([edited])
+      expected.preferences = {
+        voiceURI: 'my-voice',
+        rate: 0.7,
+        dailyNewLimit: 1,
+      }
+      expected.reviews = ['speaking', 'listening', 'reading'].map((mode) =>
+        review(edited.id, mode as Mode),
+      )
+      const incoming = legacyExpression(edited)
+      if (fields === 'situation') {
+        delete incoming.pronunciationNote
+        incoming.pronunciationNoteEn = edited.pronunciationNoteEn
+      }
+      if (fields === 'pronunciationNote') {
+        delete incoming.situation
+        incoming.situationEn = edited.situationEn
+        incoming.situationTr = edited.situationTr
+      }
+      await storedState({ ...expected, expressions: [incoming] })
+      const put = spyOn(IDBObjectStore.prototype, 'put')
+      try {
+        const repo = await repository()
+        expect(put).toHaveBeenCalledTimes(1)
+        expect(await storedState()).toEqual(expected)
+        expect(await repo.load()).toEqual(expected)
+        repo.close()
+        expect(await (await repository()).load()).toEqual(expected)
+        expect(put).toHaveBeenCalledTimes(1)
+      } finally {
+        put.mockRestore()
+      }
+    },
+  )
+
+  test('canonical loads do not write, including an empty initialized DB', async () => {
+    for (const state of [data(), data([])]) {
+      await storedState(state)
+      const put = spyOn(IDBObjectStore.prototype, 'put')
+      try {
+        expect(await (await repository()).load()).toEqual(state)
+        expect(put).not.toHaveBeenCalled()
+      } finally {
+        put.mockRestore()
+      }
+    }
+  })
+
+  test('an invalid old DB is rejected without rewriting even valid earlier expressions', async () => {
+    for (const badFields of [
+      { situation: 'conflicting legacy context' },
+      { pronunciationNote: 'conflicting legacy note' },
+      { situation: 42 },
+      { pronunciationNote: null },
+      { situationEn: '', situationTr: '' },
+      { situationEn: false },
+    ]) {
+      const raw = {
+        ...data(),
+        expressions: [
+          legacyExpression(expression('first')),
+          { ...expression('bad'), ...badFields },
+        ],
+      }
+      await storedState(raw)
+      const put = spyOn(IDBObjectStore.prototype, 'put')
+      try {
+        await expect(openRepository()).rejects.toThrow()
+        expect(put).not.toHaveBeenCalled()
+        expect(await storedState()).toEqual(raw)
+      } finally {
+        put.mockRestore()
+      }
+    }
+  })
+
+  test('a migration write failure aborts and leaves the old DB available for retry', async () => {
+    const raw = { ...data([]), expressions: [legacyExpression()] }
+    await storedState(raw)
+    const put = spyOn(IDBObjectStore.prototype, 'put').mockImplementation(
+      () => {
+        throw new DOMException(
+          'Storage full during migration',
+          'QuotaExceededError',
+        )
+      },
+    )
+    try {
+      await expect(openRepository()).rejects.toThrow(
+        'Storage full during migration',
+      )
+    } finally {
+      put.mockRestore()
+    }
+    expect(await storedState()).toEqual(raw)
+    const migrated = await (await repository()).load()
+    expect(migrated.expressions[0]!.situationTr).toBe('')
+    expect(await storedState()).toEqual(migrated)
   })
 })
 
@@ -519,7 +981,8 @@ describe('complete runtime schema validation', () => {
       { lesson: 0 },
       { audioUrl: '/relative.mp3' },
       { audioUrl: 'https://user:pass@example.com/a' },
-      { pronunciationNote: 'x'.repeat(8001) },
+      { pronunciationNoteEn: 'x'.repeat(8001) },
+      { pronunciationNoteTr: 'x'.repeat(8001) },
       { createdAt: '2026-02-30T12:00:00.000Z' },
       { createdAt: '2026-01-01' },
       { createdAt: '2026-01-01T24:00:00.000Z' },
@@ -589,7 +1052,8 @@ describe('complete runtime schema validation', () => {
     const item = expression('a', {
       createdAt: '2026-01-01T01:00:00+01:00',
       updatedAt: '2026-01-01T00:00:00Z',
-      pronunciationNote: '',
+      pronunciationNoteEn: '',
+      pronunciationNoteTr: '',
     })
     expect(parseLesson(JSON.stringify(lesson([item]))).expressions).toEqual([
       item,

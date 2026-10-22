@@ -143,6 +143,29 @@ export function validateAudioUrl(url: string): boolean {
   }
 }
 
+/** Legacy English text is read-only compatibility input, never canonical output. */
+function compatibleEnglish(
+  obj: ObjectValue,
+  legacy: string,
+  current: string,
+  max: number,
+  path: string,
+): string | undefined {
+  const oldText = Object.hasOwn(obj, legacy)
+    ? text(obj[legacy], `${path}.${legacy}`, max, true)
+    : undefined
+  const newText =
+    obj[current] !== undefined
+      ? text(obj[current], `${path}.${current}`, max, true)
+      : undefined
+  if (oldText !== undefined && newText !== undefined && oldText !== newText)
+    fail(
+      `${path}.${legacy}`,
+      `conflicts with ${current}; reconcile both values and remove the legacy ${legacy} field to keep your text.`,
+    )
+  return newText ?? oldText
+}
+
 export function validateExpression(
   value: unknown,
   path = 'expression',
@@ -155,16 +178,34 @@ export function validateExpression(
     'pronunciationEn',
     'pronunciationTr',
     'situation',
+    'situationEn',
+    'situationTr',
     'category',
     'tags',
     'lesson',
     'createdAt',
     'updatedAt',
     'pronunciationNote',
+    'pronunciationNoteEn',
+    'pronunciationNoteTr',
     'audioUrl',
     'femaleAudioUrl',
     'maleAudioUrl',
   ])
+  for (const field of ['situationEn', 'situationTr'] as const)
+    if (Object.hasOwn(obj, field))
+      text(obj[field], `${path}.${field}`, 4000, true)
+  const situationEn =
+    compatibleEnglish(obj, 'situation', 'situationEn', 4000, path) ?? ''
+  const situationTr =
+    obj.situationTr === undefined
+      ? ''
+      : text(obj.situationTr, `${path}.situationTr`, 4000, true)
+  if (!situationEn.trim() && !situationTr.trim())
+    fail(
+      `${path}.situationEn`,
+      'provide at least one nonblank situationEn or situationTr (legacy situation is also accepted); use an empty string for a missing translation.',
+    )
   const result: Expression = {
     id: text(obj.id, `${path}.id`, 200),
     french: text(obj.french, `${path}.french`, 1000),
@@ -172,7 +213,8 @@ export function validateExpression(
     turkish: text(obj.turkish, `${path}.turkish`, 1000),
     pronunciationEn: text(obj.pronunciationEn, `${path}.pronunciationEn`, 1000),
     pronunciationTr: text(obj.pronunciationTr, `${path}.pronunciationTr`, 1000),
-    situation: text(obj.situation, `${path}.situation`, 4000),
+    situationEn,
+    situationTr,
     category: text(obj.category, `${path}.category`, 100),
     tags: array(obj.tags, `${path}.tags`, 50).map((tag, i) =>
       text(tag, `${path}.tags[${i}]`, 80),
@@ -185,10 +227,18 @@ export function validateExpression(
     fail(`${path}.tags`, 'tags must be unique.')
   if (Date.parse(result.updatedAt) < Date.parse(result.createdAt))
     fail(`${path}.updatedAt`, 'must not precede createdAt.')
-  if (obj.pronunciationNote !== undefined)
-    result.pronunciationNote = text(
-      obj.pronunciationNote,
-      `${path}.pronunciationNote`,
+  const noteEn = compatibleEnglish(
+    obj,
+    'pronunciationNote',
+    'pronunciationNoteEn',
+    8000,
+    path,
+  )
+  if (noteEn !== undefined) result.pronunciationNoteEn = noteEn
+  if (obj.pronunciationNoteTr !== undefined)
+    result.pronunciationNoteTr = text(
+      obj.pronunciationNoteTr,
+      `${path}.pronunciationNoteTr`,
       8000,
       true,
     )

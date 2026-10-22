@@ -3,6 +3,7 @@ export type {
   Backup,
   Expression,
   Lesson,
+  LearningLanguage,
   LessonImport,
   LessonPreview,
   Mode,

@@ -40,8 +40,8 @@ Deployment publishes the application, not your browser’s vocabulary or review 
 
 ## Your notebook
 
-- **Library:** search French, English, Turkish, and tags without case/accent sensitivity; filter by category or lesson; play audio; inspect usage and pronunciation notes; edit or delete expressions. `/` focuses search. Deletion asks for confirmation and removes the expression’s reviews in every mode.
-- **Practice:** choose speaking recall, listening, or reading, then explicitly start a session. Answers stay hidden until reveal. Rate Again, Hard, Good, or Easy. Again cards return after the other cards; skips do not record progress. The summary distinguishes saved ratings from extra practice.
+- **Library:** search French, English, Turkish, and tags without case/accent sensitivity; filter by category or lesson; play audio; inspect usage and pronunciation notes; edit or delete expressions. Cards default to **TR**: only the Turkish meaning, approximation, situation, and note appear. Each card has an **EN/TR** toggle to show the other language instead—not both at once. `/` focuses search. Deletion asks for confirmation and removes the expression’s reviews in every mode.
+- **Practice:** choose speaking recall, listening, or reading, then explicitly start a session. Each new card defaults to Turkish with its own EN/TR toggle. Speaking uses the selected language’s situation and meaning cue. Reading and listening keep all translations and notes hidden until reveal; changing language never reveals or plays an answer. Answers stay hidden until reveal. Rate Again, Hard, Good, or Easy. Again cards return after the other cards; skips do not record progress. The summary distinguishes saved ratings from extra practice.
 - **Manage:** add expressions, import lesson JSON, export vocabulary or full backups, restore a notebook, select a French voice, set normal speed, and change your daily pace.
 
 The seven initial lesson-one expressions are seeded only on first database initialization. Editing, importing, or deleting them does not trigger reseeding. Clearing all browser site data creates a genuinely new database, which starts with the seeds again.
@@ -53,7 +53,7 @@ Pronunciation guides are clearly labeled approximations, not phonetic transcript
 1. In **Manage**, download **Example lesson JSON**, or use [`public/example-lesson.json`](public/example-lesson.json).
 2. Give it to your tutor with this request:
 
-   > Return only a valid Petit à Petit version-1 lesson JSON, following this template. Use lesson 2 (then increment for later days), unique stable IDs for genuinely new expressions, original French, English and Turkish meanings, separate approximate pronunciation guides, a practical situation, category, tags, and ISO timestamps. Keep an expression’s ID when correcting it. Do not include HTML or invent recorded-audio URLs. Capitalization is a reading aid, not strong English stress.
+   > Return only a valid Petit à Petit version-1 lesson JSON, following this template. Use lesson 2 (then increment for later days), unique stable IDs for genuinely new expressions, original French, English and Turkish meanings, separate approximate pronunciation guides, `situationTr` and `situationEn`, optional `pronunciationNoteTr` and `pronunciationNoteEn`, category, tags, and ISO timestamps. Write actual Turkish and English translations in their respective fields. Keep an expression’s ID when correcting it. Do not include HTML or invent recorded-audio URLs. Capitalization is a reading aid, not strong English stress.
 
 3. Upload their JSON or paste it into **Lesson JSON**, then choose **Validate & preview**.
 4. Review additions, matching IDs, and normalized-French duplicates. Matching IDs default to **keep my version**. Choose **replace vocabulary** explicitly to update them; review history remains unchanged. Different IDs with matching French require explicit duplicate permission or correction in the file.
@@ -62,6 +62,14 @@ Pronunciation guides are clearly labeled approximations, not phonetic transcript
 For just one expression, use **Add an expression** instead. All form data stays visible if saving fails.
 
 To attach real recordings, edit an expression’s optional general/default URL (`audioUrl`), female recording URL (`femaleAudioUrl`), and/or male recording URL (`maleAudioUrl`) in the add/edit form, or add those fields to its lesson JSON and import with the same stable ID using **replace vocabulary**. Omit unavailable fields in JSON rather than using empty strings or `null`. Neither labeled recording is required; one or both may be supplied, with or without a general recording. The downloadable example intentionally has no recording URLs—do not invent links. Lesson exports and full backups retain all supplied recording URLs; matching-ID vocabulary updates leave progress in every practice mode unchanged.
+
+### Bilingual situations and pronunciation notes
+
+New expressions and exports use **`situationTr` / `situationEn`** and optional **`pronunciationNoteTr` / `pronunciationNoteEn`**, not the old unsuffixed keys. The add/edit form lets you edit both languages together, with Turkish first. Add at least one nonblank situation; a missing translation is an empty string. Notes may be omitted when unavailable. The example lesson includes both languages.
+
+Older saved notebooks and version-1 imports/backups still work. Legacy `situation` and `pronunciationNote` values migrate to their English fields without changing IDs, timestamps, recordings, or reviews. Turkish translations are **not invented**: when missing, TR cards explain that the Turkish situation/note has not been added, rather than silently displaying English. If a file contains both an old key and a conflicting new English value, validation asks you to reconcile them before importing. Exports use only the new keys.
+
+Card language choices are display-only: they do not change progress, schedules, audio, or vocabulary. Library choices remain while you navigate during the current page session; reload resets them to Turkish. Each practice turn starts in Turkish.
 
 ## JSON formats
 
@@ -123,9 +131,9 @@ Dates are elapsed-time intervals; introduction budgets use local calendar days, 
 ## Verification
 
 ```sh
-bun run test                 # 46 domain / IndexedDB tests
+bun run test                 # 68 domain / IndexedDB tests
 bunx playwright install chromium
-bun run test:browser         # 24 browser tests, including Pages paths and WCAG checks
+bun run test:browser         # 34 browser tests, including bilingual cards, Pages paths, and WCAG checks
 bun run lint
 bun run typecheck
 bun run build

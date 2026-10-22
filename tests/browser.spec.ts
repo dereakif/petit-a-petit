@@ -1,7 +1,14 @@
 import { expect, test } from '@playwright/test'
 import AxeBuilder from '@axe-core/playwright'
-import type { Page } from '@playwright/test'
-import type { AppData, Expression, Mode, Review } from '../src/data'
+import type { Locator, Page } from '@playwright/test'
+import type {
+  AppData,
+  Backup,
+  Expression,
+  LearningLanguage,
+  Mode,
+  Review,
+} from '../src/data'
 
 type AudioHarness = {
   calls: {
@@ -41,8 +48,10 @@ function expression(
     turkish: `Türkçe anlam ${id}`,
     pronunciationEn: `en-guide-${id}`,
     pronunciationTr: `tr-guide-${id}`,
-    pronunciationNote: `Pronunciation note ${id}`,
-    situation: `Situation cue ${id}`,
+    pronunciationNoteEn: `English pronunciation note ${id}`,
+    pronunciationNoteTr: `Türkçe telaffuz notu ${id}`,
+    situationEn: `English situation ${id}`,
+    situationTr: `Türkçe kullanım durumu ${id}`,
     category: 'Travel',
     tags: ['browser-test'],
     lesson: 1,
@@ -189,7 +198,7 @@ test.beforeEach(async ({ page }) => {
       pause() {
         harness.recordingPauses++
       }
-      load() { }
+      load() {}
       removeAttribute(name: string) {
         if (name === 'src') this.src = ''
       }
@@ -213,7 +222,7 @@ test.beforeEach(async ({ page }) => {
 // Only fixture setup and persisted-state assertions bypass the UI, never mutations under test.
 async function storedData(
   page: Page,
-  replacement: AppData | null = null,
+  replacement: unknown = null,
 ): Promise<AppData> {
   return page.evaluate(
     (value) =>
@@ -227,7 +236,7 @@ async function storedData(
           const request = value ? store.put(value, 'app') : store.get('app')
           tx.oncomplete = () => {
             db.close()
-            resolve(value ?? (request.result as AppData))
+            resolve((value ?? request.result) as AppData)
           }
           tx.onabort = () => {
             db.close()
@@ -273,9 +282,10 @@ async function start(
     })
     .click()
 }
-async function absentFromDOMAndAria(page: Page, values: string[]) {
-  const html = await page.locator('body').innerHTML()
-  const accessibility = await page.locator('body').ariaSnapshot()
+async function absentFromDOMAndAria(scope: Page | Locator, values: string[]) {
+  const root = 'mainFrame' in scope ? scope.locator('body') : scope
+  const html = await root.innerHTML()
+  const accessibility = await root.ariaSnapshot()
   for (const value of values) {
     expect(html, `Answer must not be in DOM: ${value}`).not.toContain(value)
     expect(
@@ -284,12 +294,97 @@ async function absentFromDOMAndAria(page: Page, values: string[]) {
     ).not.toContain(value)
   }
 }
-const hiddenGuides = (item: Expression) => [
-  item.turkish,
-  item.pronunciationEn,
-  item.pronunciationTr,
-  item.pronunciationNote!,
-]
+const hiddenGuides = (item: Expression) =>
+  [
+    item.pronunciationEn,
+    item.pronunciationTr,
+    item.pronunciationNoteEn,
+    item.pronunciationNoteTr,
+  ].filter((value): value is string => !!value)
+
+function localizedText(item: Expression, language: LearningLanguage) {
+  return language === 'tr'
+    ? {
+        meaning: item.turkish,
+        approximation: item.pronunciationTr,
+        situation: item.situationTr,
+        note: item.pronunciationNoteTr,
+      }
+    : {
+        meaning: item.english,
+        approximation: item.pronunciationEn,
+        situation: item.situationEn,
+        note: item.pronunciationNoteEn,
+      }
+}
+
+async function expectCardLanguage(card: Locator, language: LearningLanguage) {
+  const group = card.getByRole('group', { name: 'Card language', exact: true })
+  await expect(group).toBeVisible()
+  for (const [value, name, text] of [
+    ['tr', 'Turkish', 'TR'],
+    ['en', 'English', 'EN'],
+  ] as const) {
+    const button = group.getByRole('button', { name, exact: true })
+    await expect(button).toHaveText(text)
+    await expect(button).toHaveAttribute(
+      'aria-pressed',
+      String(value === language),
+    )
+    expect(await button.evaluate((element) => element.tagName)).toBe('BUTTON')
+  }
+}
+
+async function selectCardLanguage(card: Locator, language: LearningLanguage) {
+  await card
+    .getByRole('group', { name: 'Card language', exact: true })
+    .getByRole('button', {
+      name: language === 'tr' ? 'Turkish' : 'English',
+      exact: true,
+    })
+    .click()
+  await expectCardLanguage(card, language)
+}
+
+async function expectLocalizedAnswer(
+  page: Page,
+  item: Expression,
+  language: LearningLanguage,
+) {
+  const answer = page.locator('.practice-answer')
+  const selected = localizedText(item, language)
+  for (const value of Object.values(selected))
+    if (value) await expect(answer).toContainText(value)
+  await absentFromDOMAndAria(
+    page,
+    Object.values(localizedText(item, language === 'tr' ? 'en' : 'tr')).filter(
+      (value): value is string => !!value,
+    ),
+  )
+}
+
+function expectCanonicalExpressions(expressions: Expression[]) {
+  for (const item of expressions) {
+    expect(item).toHaveProperty('situationEn', expect.any(String))
+    expect(item).toHaveProperty('situationTr', expect.any(String))
+    expect(item).not.toHaveProperty('situation')
+    expect(item).not.toHaveProperty('pronunciationNote')
+  }
+}
+
+async function downloadBackup(page: Page): Promise<Backup> {
+  const downloading = page.waitForEvent('download')
+  await page.getByRole('button', { name: /^Download full backup/ }).click()
+  const download = await downloading
+  expect(download.suggestedFilename()).toMatch(/^petit-backup-.*\.json$/)
+  const stream = await download.createReadStream()
+  if (!stream) throw new Error('Backup download did not provide a stream')
+  let text = ''
+  for await (const chunk of stream) text += String(chunk)
+  const backup = JSON.parse(text) as Backup
+  expectCanonicalExpressions(backup.data.expressions)
+  return backup
+}
 async function rate(page: Page, rating: 'Again' | 'Hard' | 'Good' | 'Easy') {
   await page
     .getByRole('group', { name: 'Rate your recall' })
@@ -310,14 +405,234 @@ function summaryCount(page: Page, label: string) {
     .locator('dd')
 }
 
-test('speaking exposes only the situation and English cue until explicit reveal', async ({
+test('library language toggles are independent, default to Turkish, and reset on reload without persistence or audio', async ({
+  page,
+}) => {
+  const data = notebook()
+  await openNotebook(page, data)
+  const cards = page.locator('.expression-card')
+  await expect(cards).toHaveCount(2)
+  for (const [index, item] of [first, second].entries()) {
+    const card = cards.nth(index)
+    await expectCardLanguage(card, 'tr')
+    await expect(card).toContainText(item.turkish)
+    await expect(card).toContainText(item.pronunciationTr)
+    await absentFromDOMAndAria(card, [
+      item.english,
+      item.pronunciationEn,
+      item.situationEn,
+      item.situationTr,
+      item.pronunciationNoteEn!,
+      item.pronunciationNoteTr!,
+    ])
+  }
+  await selectCardLanguage(cards.nth(0), 'en')
+  await expect(cards.nth(0)).toContainText(first.english)
+  await expect(cards.nth(0)).toContainText(first.pronunciationEn)
+  await absentFromDOMAndAria(cards.nth(0), [
+    first.turkish,
+    first.pronunciationTr,
+    first.pronunciationNoteEn!,
+    first.pronunciationNoteTr!,
+  ])
+  await expectCardLanguage(cards.nth(1), 'tr')
+  await selectCardLanguage(cards.nth(1), 'en')
+  await selectCardLanguage(cards.nth(0), 'tr')
+  await expectCardLanguage(cards.nth(1), 'en')
+  await cards
+    .nth(1)
+    .getByRole('button', { name: 'Notes & audio', exact: true })
+    .click()
+  await expect(cards.nth(1)).toContainText(second.situationEn)
+  await expect(cards.nth(1)).toContainText(second.pronunciationNoteEn!)
+  await selectCardLanguage(cards.nth(1), 'tr')
+  await expect(cards.nth(1)).toContainText(second.situationTr)
+  await expect(cards.nth(1)).toContainText(second.pronunciationNoteTr!)
+  await absentFromDOMAndAria(
+    cards.nth(1),
+    Object.values(localizedText(second, 'en')) as string[],
+  )
+  await selectCardLanguage(cards.nth(0), 'en')
+  await navigate(page, 'Manage')
+  await navigate(page, 'Library')
+  await expectCardLanguage(cards.nth(0), 'en')
+  expect(await storedData(page)).toEqual(data)
+  expect(await page.evaluate(() => window.__browserAudio.calls)).toEqual([])
+  expect(
+    await page.evaluate(() => window.__browserAudio.recordingAttempts),
+  ).toEqual([])
+  await page.reload()
+  for (const [index, item] of [first, second].entries()) {
+    await expectCardLanguage(cards.nth(index), 'tr')
+    await expect(cards.nth(index)).toContainText(item.turkish)
+    await absentFromDOMAndAria(cards.nth(index), [
+      item.english,
+      item.pronunciationEn,
+    ])
+  }
+  expect(await storedData(page)).toEqual(data)
+})
+
+for (const mode of ['Speaking', 'Reading', 'Listening'] as const) {
+  test(`${mode} language toggles preserve secrecy, reveal and audio state, queue order, and saved progress`, async ({
+    page,
+  }) => {
+    const data = notebook()
+    await openNotebook(page, data)
+    await start(page, mode)
+    const card = page.locator('.practice-card')
+    const reveal = page.getByRole('button', {
+      name: 'Reveal answer',
+      exact: true,
+    })
+    const turn = page.getByRole('heading', {
+      name: new RegExp(`Due session · ${mode} · Turn 1`),
+    })
+    const expectUnrevealed = async (
+      item: Expression,
+      language: LearningLanguage,
+    ) => {
+      await expectCardLanguage(card, language)
+      await expect(page.locator('.practice-answer')).toHaveCount(0)
+      await expect(
+        page.getByRole('group', { name: 'Rate your recall' }),
+      ).toHaveCount(0)
+      await absentFromDOMAndAria(page, hiddenGuides(item))
+      if (mode === 'Speaking') {
+        const selected = localizedText(item, language)
+        const other = localizedText(item, language === 'tr' ? 'en' : 'tr')
+        await expect(
+          card.getByText(language === 'tr' ? 'TURKISH CUE' : 'ENGLISH CUE', {
+            exact: true,
+          }),
+        ).toBeVisible()
+        await expect(
+          card.getByText(selected.meaning, { exact: true }),
+        ).toBeVisible()
+        await expect(
+          card.getByText(selected.situation, { exact: true }),
+        ).toBeVisible()
+        await absentFromDOMAndAria(page, [
+          item.french,
+          other.meaning,
+          other.situation,
+        ])
+        await expect(reveal).toBeEnabled()
+      } else {
+        await absentFromDOMAndAria(page, [
+          item.english,
+          item.turkish,
+          item.situationEn,
+          item.situationTr,
+          ...(mode === 'Listening' ? [item.french] : []),
+        ])
+        if (mode === 'Reading')
+          await expect(
+            card.getByText(item.french, { exact: true }),
+          ).toBeVisible()
+      }
+    }
+    await expectUnrevealed(first, 'tr')
+    for (const language of ['en', 'tr', 'en'] as const) {
+      await selectCardLanguage(card, language)
+      await expectUnrevealed(first, language)
+      await expect(turn).toBeVisible()
+      await expect(page.getByText(/Started with 2\./)).toBeVisible()
+      if (mode === 'Listening') await expect(reveal).toBeDisabled()
+      expect(await storedData(page)).toEqual(data)
+      expect(await page.evaluate(() => window.__browserAudio.calls)).toEqual([])
+      expect(
+        await page.evaluate(() => window.__browserAudio.recordingAttempts),
+      ).toEqual([])
+    }
+    if (mode === 'Listening') {
+      await page.evaluate(() => {
+        window.__browserAudio.holdSpeech = true
+      })
+      await page
+        .getByRole('button', { name: 'Play French audio', exact: true })
+        .click()
+      await expect(reveal).toBeDisabled()
+      await selectCardLanguage(card, 'tr')
+      await expectUnrevealed(first, 'tr')
+      await expect(reveal).toBeDisabled()
+      expect(
+        await page.evaluate(() => window.__browserAudio.calls),
+      ).toHaveLength(1)
+      await page.evaluate(() => window.__browserAudio.finish())
+      await expect(reveal).toBeEnabled()
+      await selectCardLanguage(card, 'en')
+      await expect(reveal).toBeEnabled()
+      await expectUnrevealed(first, 'en')
+    }
+    const audioBeforeReveal = await page.evaluate(() => ({
+      calls: window.__browserAudio.calls,
+      recordings: window.__browserAudio.recordingAttempts,
+    }))
+    await reveal.click()
+    await expectLocalizedAnswer(page, first, 'en')
+    for (const language of ['tr', 'en'] as const) {
+      await selectCardLanguage(card, language)
+      await expectLocalizedAnswer(page, first, language)
+      await expect(reveal).toHaveCount(0)
+      await expect(
+        page.getByRole('group', { name: 'Rate your recall' }),
+      ).toBeVisible()
+      await expect(turn).toBeVisible()
+      expect(await storedData(page)).toEqual(data)
+      expect(
+        await page.evaluate(() => ({
+          calls: window.__browserAudio.calls,
+          recordings: window.__browserAudio.recordingAttempts,
+        })),
+      ).toEqual(audioBeforeReveal)
+    }
+    await rate(page, 'Again')
+    const saved = await storedData(page)
+    expect(saved.reviews).toHaveLength(1)
+    expect(saved.reviews[0]).toMatchObject({
+      expressionId: first.id,
+      mode: mode.toLowerCase(),
+      history: [{ at: expect.any(String), rating: 'again' }],
+    })
+    await expect(
+      page.getByRole('heading', {
+        name: new RegExp(`Due session · ${mode} · Turn 2`),
+      }),
+    ).toBeVisible()
+    await expectUnrevealed(second, 'tr')
+    await selectCardLanguage(card, 'en')
+    await expectUnrevealed(second, 'en')
+    expect(await storedData(page)).toEqual(saved)
+    await page.getByRole('button', { name: 'Skip card without rating' }).click()
+    await expect(
+      page.getByRole('heading', {
+        name: new RegExp(`Due session · ${mode} · Turn 3`),
+      }),
+    ).toBeVisible()
+    await expectUnrevealed(first, 'tr')
+    expect(await storedData(page)).toEqual(saved)
+    expect(await page.evaluate(() => window.__browserAudio.calls)).toEqual(
+      audioBeforeReveal.calls,
+    )
+  })
+}
+
+test('speaking exposes only the Turkish situation and cue until explicit reveal', async ({
   page,
 }) => {
   await openNotebook(page)
   await start(page, 'Speaking')
-  await expect(page.getByText(first.situation, { exact: true })).toBeVisible()
-  await expect(page.getByText(first.english, { exact: true })).toBeVisible()
-  await absentFromDOMAndAria(page, [first.french, ...hiddenGuides(first)])
+  await expectCardLanguage(page.locator('.practice-card'), 'tr')
+  await expect(page.getByText('TURKISH CUE', { exact: true })).toBeVisible()
+  await expect(page.getByText(first.situationTr, { exact: true })).toBeVisible()
+  await expect(page.getByText(first.turkish, { exact: true })).toBeVisible()
+  await absentFromDOMAndAria(page, [
+    first.french,
+    first.english,
+    first.situationEn,
+    ...hiddenGuides(first),
+  ])
   await expect(
     page.getByRole('group', { name: 'Rate your recall' }),
   ).toHaveCount(0)
@@ -327,16 +642,7 @@ test('speaking exposes only the situation and English cue until explicit reveal'
   await expect(
     page.getByRole('heading', { name: first.french, exact: true }),
   ).toBeFocused()
-  await expect(page.locator('.practice-answer')).toContainText(first.turkish)
-  await expect(page.locator('.practice-answer')).toContainText(
-    first.pronunciationEn,
-  )
-  await expect(page.locator('.practice-answer')).toContainText(
-    first.pronunciationTr,
-  )
-  await expect(page.locator('.practice-answer')).toContainText(
-    first.pronunciationNote!,
-  )
+  await expectLocalizedAnswer(page, first, 'tr')
 })
 
 test('listening hides every answer field and plays only mocked French, including slower playback', async ({
@@ -347,7 +653,9 @@ test('listening hides every answer field and plays only mocked French, including
   await absentFromDOMAndAria(page, [
     first.french,
     first.english,
-    first.situation,
+    first.turkish,
+    first.situationEn,
+    first.situationTr,
     ...hiddenGuides(first),
   ])
   await expect(
@@ -374,13 +682,16 @@ test('listening hides every answer field and plays only mocked French, including
   await absentFromDOMAndAria(page, [
     first.french,
     first.english,
+    first.turkish,
+    first.situationEn,
+    first.situationTr,
     ...hiddenGuides(first),
   ])
   await page.getByRole('button', { name: 'Reveal answer' }).click()
   await expect(
     page.getByRole('heading', { name: first.french, exact: true }),
   ).toBeFocused()
-  await expect(page.locator('.practice-answer')).toContainText(first.english)
+  await expectLocalizedAnswer(page, first, 'tr')
   const cancellations = await page.evaluate(
     () => window.__browserAudio.cancellations,
   )
@@ -402,7 +713,9 @@ test('reading shows French but no meaning, pronunciation, usage, or audio before
   await expect(page.getByText(first.french, { exact: true })).toBeVisible()
   await absentFromDOMAndAria(page, [
     first.english,
-    first.situation,
+    first.turkish,
+    first.situationEn,
+    first.situationTr,
     ...hiddenGuides(first),
   ])
   await expect(
@@ -413,7 +726,7 @@ test('reading shows French but no meaning, pronunciation, usage, or audio before
   await expect(
     page.getByRole('heading', { name: 'Meaning and pronunciation' }),
   ).toBeFocused()
-  await expect(page.locator('.practice-answer')).toContainText(first.english)
+  await expectLocalizedAnswer(page, first, 'tr')
   expect((await storedData(page)).reviews).toEqual([])
 })
 
@@ -474,6 +787,9 @@ test('failed synthesis keeps listening answers hidden and can be skipped without
   await absentFromDOMAndAria(page, [
     first.french,
     first.english,
+    first.turkish,
+    first.situationEn,
+    first.situationTr,
     ...hiddenGuides(first),
   ])
   await expect(
@@ -513,6 +829,9 @@ test('a failed recording does not silently synthesize; explicit French fallback 
   await absentFromDOMAndAria(page, [
     first.french,
     first.english,
+    first.turkish,
+    first.situationEn,
+    first.situationTr,
     ...hiddenGuides(first),
   ])
   await page
@@ -546,15 +865,20 @@ test('due-first daily-limited ratings persist, Again returns later, and extra pr
   data.reviews = [dueReview(second.id)]
   await openNotebook(page, data)
   await start(page, 'Speaking')
-  await expect(page.getByText(second.english, { exact: true })).toBeVisible()
+  await expect(page.getByText(second.turkish, { exact: true })).toBeVisible()
   await expect(page.getByText(/Started with 2\./)).toBeVisible()
   await page.getByRole('button', { name: 'Reveal answer' }).click()
   await rate(page, 'Again')
-  await expect(page.getByText(first.english, { exact: true })).toBeVisible()
+  await expect(page.getByText(first.turkish, { exact: true })).toBeVisible()
   await page.getByRole('button', { name: 'Reveal answer' }).click()
   await rate(page, 'Good')
-  await expect(page.getByText(second.english, { exact: true })).toBeVisible()
-  await absentFromDOMAndAria(page, [second.french, ...hiddenGuides(second)])
+  await expect(page.getByText(second.turkish, { exact: true })).toBeVisible()
+  await absentFromDOMAndAria(page, [
+    second.french,
+    second.english,
+    second.situationEn,
+    ...hiddenGuides(second),
+  ])
   await page.getByRole('button', { name: 'Reveal answer' }).click()
   await rate(page, 'Good')
   await expect(
@@ -623,8 +947,8 @@ test('failed rating writes retain the revealed card; rapid retries save exactly 
     .getByRole('group', { name: 'Rate your recall' })
     .getByRole('button', { name: /^Good\b/ })
     .evaluate((button) => {
-      ; (button as HTMLButtonElement).click()
-        ; (button as HTMLButtonElement).click()
+      ;(button as HTMLButtonElement).click()
+      ;(button as HTMLButtonElement).click()
     })
   await expect(
     page.getByRole('heading', { name: 'Session complete' }),
@@ -647,16 +971,38 @@ test('manual add, edit, cancelled deletion, and confirmed deletion survive reloa
     'Turkish meaning': 'Benim için bir kahve.',
     'English approximation': 'uhn ka-FEH poor MWAH',
     'Turkish approximation': 'ön kafe pur mua',
-    'When would you use it?': 'Order at a café.',
+
     Category: 'Café',
     'Lesson number': '2',
   }
   for (const [label, value] of Object.entries(fields))
     await page.getByLabel(label, { exact: true }).fill(value)
   await page.getByLabel(/^Tags/).fill('coffee, morning')
-  await page
-    .getByLabel(/^Pronunciation note/)
-    .fill('A memory aid, not exact phonetics.')
+  const localizedFields = {
+    situationTr: 'Bir kafede sipariş ver.',
+    situationEn: 'Order at a café.',
+    pronunciationNoteTr: 'Bir hafıza yardımıdır, tam fonetik değildir.',
+    pronunciationNoteEn: 'A memory aid, not exact phonetics.',
+  }
+  for (const [name, value] of Object.entries(localizedFields)) {
+    const field = page.locator(`[name="${name}"]`)
+    await expect(field).toBeVisible()
+    await field.fill(value)
+  }
+  const situationFields = page.locator(
+    'input[name="situationTr"], input[name="situationEn"]',
+  )
+  await expect(situationFields).toHaveCount(2)
+  await expect(situationFields.nth(0)).toHaveAttribute('name', 'situationTr')
+  for (const field of await situationFields.all())
+    await expect(field).not.toHaveAttribute('required')
+  const noteFields = page.locator(
+    'textarea[name="pronunciationNoteTr"], textarea[name="pronunciationNoteEn"]',
+  )
+  await expect(noteFields).toHaveCount(2)
+  await expect(noteFields.nth(0)).toHaveAttribute('name', 'pronunciationNoteTr')
+  for (const field of await noteFields.all())
+    await expect(field).not.toHaveAttribute('required')
   await page
     .getByRole('button', { name: 'Save expression', exact: true })
     .click()
@@ -678,6 +1024,8 @@ test('manual add, edit, cancelled deletion, and confirmed deletion survive reloa
   )!
   expect(added.tags).toEqual(['coffee', 'morning'])
   expect(added.pronunciationTr).toBe(fields['Turkish approximation'])
+  expect(added).toMatchObject(localizedFields)
+  expectCanonicalExpressions([added])
   await page
     .getByRole('button', { name: `Edit ${added.french}`, exact: true })
     .click()
@@ -685,19 +1033,45 @@ test('manual add, edit, cancelled deletion, and confirmed deletion survive reloa
     .getByLabel('English meaning', { exact: true })
     .fill('One coffee for me, please.')
   await page
+    .getByLabel('Turkish meaning', { exact: true })
+    .fill('Benim için bir kahve, lütfen.')
+  for (const [name, value] of Object.entries(localizedFields)) {
+    await expect(page.locator(`[name="${name}"]`)).toHaveValue(value)
+    await page.locator(`[name="${name}"]`).fill(`${value} (edited)`)
+  }
+  await page
     .getByRole('button', { name: 'Save expression', exact: true })
     .click()
   await expect(
-    page.getByText('One coffee for me, please.', { exact: true }),
+    page.getByText('Benim için bir kahve, lütfen.', { exact: true }),
   ).toBeVisible()
   await page.reload()
   await expect(
-    page.getByText('One coffee for me, please.', { exact: true }),
+    page.getByText('Benim için bir kahve, lütfen.', { exact: true }),
   ).toBeVisible()
+  const edited = (await storedData(page)).expressions.find(
+    (item) => item.id === added.id,
+  )!
+  expect(edited.english).toBe('One coffee for me, please.')
+  expect(edited.turkish).toBe('Benim için bir kahve, lütfen.')
+  for (const [name, value] of Object.entries(localizedFields))
+    expect(edited).toHaveProperty(name, `${value} (edited)`)
+  expectCanonicalExpressions([edited])
   const card = page.getByRole('article').filter({
     has: page.getByRole('heading', { name: added.french, exact: true }),
   })
+  await selectCardLanguage(card, 'en')
+  await expect(card).toContainText(edited.english)
   await card.getByRole('button', { name: 'Notes & audio', exact: true }).click()
+  await expect(card).toContainText(edited.situationEn)
+  await expect(card).toContainText(edited.pronunciationNoteEn!)
+  await selectCardLanguage(card, 'tr')
+  await expect(card).toContainText(edited.situationTr)
+  await expect(card).toContainText(edited.pronunciationNoteTr!)
+  await absentFromDOMAndAria(
+    card,
+    Object.values(localizedText(edited, 'en')) as string[],
+  )
   await card
     .getByRole('button', { name: 'Delete expression', exact: true })
     .click()
@@ -741,7 +1115,16 @@ test('invalid imports are atomic, preview cancellation is harmless, and vocabula
     page.getByRole('button', { name: 'Apply lesson', exact: true }),
   ).toHaveCount(0)
   expect(await storedData(page)).toEqual(data)
-  const updated = { ...first, english: 'Updated ticket meaning', lesson: 2 }
+  const updated = {
+    ...first,
+    english: 'Updated ticket meaning',
+    turkish: 'Güncellenmiş bilet anlamı',
+    situationEn: 'Updated English ticket situation',
+    situationTr: 'Güncellenmiş Türkçe bilet durumu',
+    pronunciationNoteEn: 'Updated English ticket note',
+    pronunciationNoteTr: 'Güncellenmiş Türkçe bilet notu',
+    lesson: 2,
+  }
   const lesson = {
     kind: 'petit-lesson',
     version: 1,
@@ -770,9 +1153,248 @@ test('invalid imports are atomic, preview cancellation is harmless, and vocabula
     expressions: [updated, second],
   })
   await page.reload()
-  await expect(page.getByText(updated.english, { exact: true })).toBeVisible()
+  await expect(page.getByText(updated.turkish, { exact: true })).toBeVisible()
+  expectCanonicalExpressions((await storedData(page)).expressions)
   expect((await storedData(page)).reviews).toEqual(data.reviews)
 })
+
+test('localized lesson import, backup export, and restore round-trip both languages without legacy keys', async ({
+  page,
+}) => {
+  const item = expression('localized-roundtrip', {
+    french: 'Je cherche la gare.',
+    english: 'I am looking for the station.',
+    turkish: 'Tren istasyonunu arıyorum.',
+    situationEn: 'Ask someone for directions to the station.',
+    situationTr: 'Birinden tren istasyonunun yolunu sor.',
+    pronunciationNoteEn: 'Keep the final vowel light.',
+    pronunciationNoteTr: 'Son ünlüyü hafif söyle.',
+  })
+  await openNotebook(page, notebook([]))
+  await navigate(page, 'Manage')
+  await upload(page, 'Choose lesson JSON file', {
+    kind: 'petit-lesson',
+    version: 1,
+    expressions: [item],
+  })
+  await page.getByRole('button', { name: 'Apply lesson', exact: true }).click()
+  await expect(
+    page.getByRole('status').filter({ hasText: 'Lesson added' }),
+  ).toBeVisible()
+  const imported = await storedData(page)
+  expect(imported.expressions).toEqual([item])
+  const backup = await downloadBackup(page)
+  expect(backup.data).toEqual(imported)
+  await navigate(page, 'Library')
+  const card = page.locator('.expression-card')
+  await expectCardLanguage(card, 'tr')
+  await card.getByRole('button', { name: 'Notes & audio', exact: true }).click()
+  await expect(card).toContainText(item.situationTr)
+  await expect(card).toContainText(item.pronunciationNoteTr!)
+  await selectCardLanguage(card, 'en')
+  await expect(card).toContainText(item.situationEn)
+  await expect(card).toContainText(item.pronunciationNoteEn!)
+  await card
+    .getByRole('button', { name: 'Delete expression', exact: true })
+    .click()
+  await page
+    .getByRole('alertdialog')
+    .getByRole('button', { name: 'Delete permanently' })
+    .click()
+  await expect(card).toHaveCount(0)
+  expect((await storedData(page)).expressions).toEqual([])
+  await navigate(page, 'Manage')
+  await page.getByText('Restore a full backup', { exact: true }).click()
+  await upload(page, 'Choose full backup JSON', backup)
+  await page
+    .getByLabel('Type REPLACE to confirm replacement', { exact: true })
+    .fill('REPLACE')
+  await page.getByRole('button', { name: 'Replace with backup' }).click()
+  await expect(
+    page.getByRole('status').filter({ hasText: 'Backup restored' }),
+  ).toBeVisible()
+  expect(await storedData(page)).toEqual(imported)
+  await page.reload()
+  await expectCardLanguage(card, 'tr')
+  await card.getByRole('button', { name: 'Notes & audio', exact: true }).click()
+  await expect(card).toContainText(item.turkish)
+  await expect(card).toContainText(item.situationTr)
+  await expect(card).toContainText(item.pronunciationNoteTr!)
+  await absentFromDOMAndAria(
+    card,
+    Object.values(localizedText(item, 'en')) as string[],
+  )
+  await selectCardLanguage(card, 'en')
+  for (const value of Object.values(localizedText(item, 'en')))
+    if (value) await expect(card).toContainText(value)
+  await absentFromDOMAndAria(
+    card,
+    Object.values(localizedText(item, 'tr')) as string[],
+  )
+  expectCanonicalExpressions((await storedData(page)).expressions)
+})
+
+for (const language of ['tr', 'en'] as const) {
+  test(`the expression form accepts a ${language}-only situation and optional empty notes, but rejects two empty situations`, async ({
+    page,
+  }) => {
+    await openNotebook(page, notebook([]))
+    await page
+      .getByRole('region', { name: 'Vocabulary library', exact: true })
+      .getByRole('button', { name: 'Add expression', exact: true })
+      .click()
+    for (const [label, value] of Object.entries({
+      'French expression': 'Un verre d’eau.',
+      'English meaning': 'A glass of water.',
+      'Turkish meaning': 'Bir bardak su.',
+      'English approximation': 'uhn vehr doh',
+      'Turkish approximation': 'ön ver do',
+      Category: 'Café',
+    }))
+      await page.getByLabel(label, { exact: true }).fill(value)
+    const tr = page.locator('input[name="situationTr"]')
+    const en = page.locator('input[name="situationEn"]')
+    await expect(tr).not.toHaveAttribute('required')
+    await expect(en).not.toHaveAttribute('required')
+    await page
+      .getByRole('button', { name: 'Save expression', exact: true })
+      .click()
+    await expect(page.getByRole('alert').first()).toBeVisible()
+    await expect(page.locator('.expression-form')).toBeVisible()
+    expect((await storedData(page)).expressions).toEqual([])
+    await (language === 'tr' ? tr : en).fill(
+      language === 'tr' ? 'Su sipariş et.' : 'Order water.',
+    )
+    await page
+      .getByRole('button', { name: 'Save expression', exact: true })
+      .click()
+    await expect(page.locator('.expression-card')).toHaveCount(1)
+    const saved = (await storedData(page)).expressions[0]
+    expect(saved).toMatchObject({
+      situationTr: language === 'tr' ? 'Su sipariş et.' : '',
+      situationEn: language === 'en' ? 'Order water.' : '',
+    })
+    expect(saved.pronunciationNoteTr ?? '').toBe('')
+    expect(saved.pronunciationNoteEn ?? '').toBe('')
+    expectCanonicalExpressions([saved])
+  })
+}
+
+for (const source of ['storage', 'lesson import', 'backup restore'] as const) {
+  test(`legacy ${source} upgrades to canonical English fields with missing Turkish translations and no English fallback`, async ({
+    page,
+  }) => {
+    const item = expression('legacy-translation')
+    const legacy: Record<string, unknown> = {
+      ...item,
+      situation: item.situationEn,
+      pronunciationNote: item.pronunciationNoteEn,
+    }
+    for (const field of [
+      'situationEn',
+      'situationTr',
+      'pronunciationNoteEn',
+      'pronunciationNoteTr',
+    ])
+      delete legacy[field]
+    const expected = { ...item, situationTr: '' }
+    delete expected.pronunciationNoteTr
+    const data = notebook([expected])
+    data.reviews = [dueReview(item.id)]
+    await openNotebook(page, notebook([]))
+    if (source === 'storage') {
+      await storedData(page, { ...data, expressions: [legacy] })
+      await page.reload()
+    } else {
+      await navigate(page, 'Manage')
+      if (source === 'lesson import') {
+        await upload(page, 'Choose lesson JSON file', {
+          kind: 'petit-lesson',
+          version: 1,
+          expressions: [legacy],
+        })
+        await page
+          .getByRole('button', { name: 'Apply lesson', exact: true })
+          .click()
+        await expect(
+          page.getByRole('status').filter({ hasText: 'Lesson added' }),
+        ).toBeVisible()
+      } else {
+        await page.getByText('Restore a full backup', { exact: true }).click()
+        await upload(page, 'Choose full backup JSON', {
+          kind: 'petit-backup',
+          version: 1,
+          exportedAt: timestamp,
+          data: { ...data, expressions: [legacy] },
+        })
+        await page
+          .getByLabel('Type REPLACE to confirm replacement', { exact: true })
+          .fill('REPLACE')
+        await page.getByRole('button', { name: 'Replace with backup' }).click()
+        await expect(
+          page.getByRole('status').filter({ hasText: 'Backup restored' }),
+        ).toBeVisible()
+      }
+      await navigate(page, 'Library')
+    }
+    const card = page.locator('.expression-card')
+    await expectCardLanguage(card, 'tr')
+    await card
+      .getByRole('button', { name: 'Notes & audio', exact: true })
+      .click()
+    await expect(
+      card.getByText('Turkish situation not added yet.', { exact: true }),
+    ).toBeVisible()
+    await expect(
+      card.getByText('Turkish pronunciation note not added yet.', {
+        exact: true,
+      }),
+    ).toBeVisible()
+    await absentFromDOMAndAria(
+      page,
+      Object.values(localizedText(item, 'en')) as string[],
+    )
+    const saved = await storedData(page)
+    expect(saved.expressions).toEqual([expected])
+    expect(saved.reviews).toEqual(
+      source === 'lesson import' ? [] : data.reviews,
+    )
+    expectCanonicalExpressions(saved.expressions)
+    await selectCardLanguage(card, 'en')
+    await expect(card).toContainText(item.situationEn)
+    await expect(card).toContainText(item.pronunciationNoteEn!)
+    await navigate(page, 'Manage')
+    expect((await downloadBackup(page)).data).toEqual(saved)
+    await start(page, 'Speaking')
+    const practice = page.locator('.practice-card')
+    await expectCardLanguage(practice, 'tr')
+    await expect(
+      practice.getByText('Turkish situation not added yet.', { exact: true }),
+    ).toBeVisible()
+    await expect(
+      practice.getByText(item.turkish, { exact: true }),
+    ).toBeVisible()
+    await absentFromDOMAndAria(page, [
+      item.french,
+      ...(Object.values(localizedText(item, 'en')) as string[]),
+      ...hiddenGuides(item),
+    ])
+    await page.getByRole('button', { name: 'Reveal answer' }).click()
+    await expect(page.locator('.practice-answer')).toContainText(
+      'Turkish situation not added yet.',
+    )
+    await expect(page.locator('.practice-answer')).toContainText(
+      'Turkish pronunciation note not added yet.',
+    )
+    await absentFromDOMAndAria(
+      page,
+      Object.values(localizedText(item, 'en')) as string[],
+    )
+    await selectCardLanguage(practice, 'en')
+    await expectLocalizedAnswer(page, expected, 'en')
+    expect(await storedData(page)).toEqual(saved)
+  })
+}
 
 test('backup export contains the notebook and restore requires explicit replacement confirmation', async ({
   page,
@@ -781,15 +1403,7 @@ test('backup export contains the notebook and restore requires explicit replacem
   data.reviews = [dueReview(first.id)]
   await openNotebook(page, data)
   await navigate(page, 'Manage')
-  const downloading = page.waitForEvent('download')
-  await page.getByRole('button', { name: /^Download full backup/ }).click()
-  const download = await downloading
-  expect(download.suggestedFilename()).toMatch(/^petit-backup-.*\.json$/)
-  const stream = await download.createReadStream()
-  if (!stream) throw new Error('Backup download did not provide a stream')
-  let text = ''
-  for await (const chunk of stream) text += String(chunk)
-  expect(JSON.parse(text)).toEqual({
+  expect(await downloadBackup(page)).toEqual({
     kind: 'petit-backup',
     version: 1,
     exportedAt: expect.any(String),
@@ -882,6 +1496,25 @@ test('native keyboard navigation reaches practice and reveal moves focus to the 
   await expect(
     page.getByRole('heading', { name: /Due session · Speaking · Turn 1/ }),
   ).toBeFocused()
+  await page.keyboard.press('Tab')
+  const languageGroup = page
+    .locator('.practice-card')
+    .getByRole('group', { name: 'Card language', exact: true })
+  await expect(
+    languageGroup.getByRole('button', { name: 'Turkish', exact: true }),
+  ).toBeFocused()
+  await page.keyboard.press('Tab')
+  await expect(
+    languageGroup.getByRole('button', { name: 'English', exact: true }),
+  ).toBeFocused()
+  await page.keyboard.press('Space')
+  await expectCardLanguage(page.locator('.practice-card'), 'en')
+  await absentFromDOMAndAria(page, [
+    first.french,
+    first.turkish,
+    first.situationTr,
+    ...hiddenGuides(first),
+  ])
   await page.keyboard.press('Tab')
   await expect(
     page.getByRole('button', { name: 'Reveal answer' }),
@@ -1203,6 +1836,17 @@ test('recording selection controls normal and slower playback and stops without 
   const pauses = await page.evaluate(
     () => window.__browserAudio.recordingPauses,
   )
+  await selectCardLanguage(page.locator('.expression-card'), 'en')
+  await expect(picker).toHaveValue('female')
+  await expect(
+    page.getByRole('button', { name: 'Stop', exact: true }),
+  ).toBeVisible()
+  expect(await page.evaluate(() => window.__browserAudio.recordingPauses)).toBe(
+    pauses,
+  )
+  expect(
+    await page.evaluate(() => window.__browserAudio.recordingAttempts),
+  ).toEqual([item.audioUrl, item.femaleAudioUrl, item.femaleAudioUrl])
   await picker.selectOption('male')
   expect(
     await page.evaluate(() => window.__browserAudio.recordingPauses),
@@ -1256,6 +1900,9 @@ for (const voice of ['female', 'male'] as const) {
     await absentFromDOMAndAria(page, [
       first.french,
       first.english,
+      first.turkish,
+      first.situationEn,
+      first.situationTr,
       ...hiddenGuides(first),
     ])
     await page
@@ -1347,10 +1994,12 @@ test('production assets and the lesson download resolve under the GitHub Pages s
   )
   const lesson = await request.get((await example.getAttribute('href'))!)
   expect(lesson.ok()).toBe(true)
-  expect(await lesson.json()).toMatchObject({
+  const exampleLesson = await lesson.json()
+  expect(exampleLesson).toMatchObject({
     kind: 'petit-lesson',
     version: 1,
   })
+  expectCanonicalExpressions(exampleLesson.expressions)
   const downloading = page.waitForEvent('download')
   await example.click()
   const download = await downloading

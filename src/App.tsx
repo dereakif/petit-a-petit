@@ -5,9 +5,23 @@ import {
   normalize,
   openRepository,
 } from './data'
-import type { AppData, Expression, Mode, Rating, Repository } from './data'
+import type {
+  AppData,
+  Expression,
+  LearningLanguage,
+  Mode,
+  Rating,
+  Repository,
+} from './data'
+import { learningText } from './language'
 import { useAudio } from './audio'
-import { Answer, ConfirmDelete, ExpressionForm, Icon } from './components'
+import {
+  Answer,
+  ConfirmDelete,
+  ExpressionForm,
+  Icon,
+  LanguageToggle,
+} from './components'
 import Practice from './Practice'
 import Manage from './Manage.tsx'
 import './App.css'
@@ -37,6 +51,9 @@ export default function App() {
   const [category, setCategory] = useState('All categories')
   const [lesson, setLesson] = useState('All lessons')
   const [expanded, setExpanded] = useState<string | null>(null)
+  const [cardLanguages, setCardLanguages] = useState<
+    Record<string, LearningLanguage>
+  >({})
   const [editing, setEditing] = useState<Expression | 'new' | null>(null)
   const [deleting, setDeleting] = useState<Expression | null>(null)
   const repository = useRef<Repository | null>(null)
@@ -367,8 +384,8 @@ export default function App() {
                         {filtered.length === 1 ? 'expression' : 'expressions'}
                         <span className="dot-separator">·</span>
                         {search ||
-                          category !== 'All categories' ||
-                          lesson !== 'All lessons'
+                        category !== 'All categories' ||
+                        lesson !== 'All lessons'
                           ? 'Filtered collection'
                           : 'A small beginning, a world of possibilities'}
                       </p>
@@ -407,89 +424,110 @@ export default function App() {
                       </div>
                     ) : (
                       <div className="expression-grid">
-                        {filtered.map((e) => (
-                          <article
-                            className={`expression-card ${expanded === e.id ? 'is-expanded' : ''}`}
-                            key={e.id}
-                          >
-                            <div className="card-meta">
-                              <span
-                                className={`category-badge ${e.category.toLowerCase().includes('polite') || e.category.toLowerCase().includes('courtesy') ? 'peach' : ''}`}
-                              >
-                                {e.category}
-                              </span>
-                              <span>LESSON {e.lesson}</span>
-                            </div>
-                            <div className="card-title">
-                              <h2 lang="fr">{e.french}</h2>
-                              <button
-                                className="icon-button listen-icon"
-                                aria-label={`Listen to ${e.french}`}
-                                onClick={() => audio.play(e)}
-                              >
-                                <Icon name="speaker" size={21} />
-                              </button>
-                            </div>
-                            <p className="english-meaning">{e.english}</p>
-                            <p className="turkish-meaning" lang="tr">
-                              {e.turkish}
-                            </p>
-                            <div className="card-pronunciation">
-                              <span>EN</span>
-                              <span>{e.pronunciationEn}</span>
-                              <span>TR</span>
-                              <span lang="tr">{e.pronunciationTr}</span>
-                              <small>approximate pronunciation</small>
-                            </div>
-                            <div className="card-footer">
-                              <button
-                                className="text-button"
-                                aria-expanded={expanded === e.id}
-                                aria-controls={`details-${e.id}`}
-                                onClick={() => {
-                                  audio.stop()
-                                  setExpanded(expanded === e.id ? null : e.id)
-                                }}
-                              >
-                                {expanded === e.id
-                                  ? 'Less detail'
-                                  : 'Notes & audio'}
-                                <span aria-hidden="true">
-                                  {expanded === e.id ? '−' : '+'}
-                                </span>
-                              </button>
-                              <button
-                                className="icon-button"
-                                aria-label={`Edit ${e.french}`}
-                                onClick={() => edit(e)}
-                              >
-                                <Icon name="edit" size={16} />
-                              </button>
-                            </div>
-                            {expanded === e.id && (
-                              <div
-                                className="card-details"
-                                id={`details-${e.id}`}
-                              >
-                                <Answer expression={e} audio={audio} />
-                                {e.tags.length > 0 && (
-                                  <p className="tags">
-                                    {e.tags.map((t) => `#${t}`).join(' ')}
-                                  </p>
-                                )}
-                                <button
-                                  className="text-button danger"
-                                  onClick={() => {
-                                    audio.stop()
-                                    setDeleting(e)
-                                  }}
+                        {filtered.map((e) => {
+                          const language = cardLanguages[e.id] ?? 'tr'
+                          const text = learningText(e, language)
+                          return (
+                            <article
+                              className={`expression-card ${expanded === e.id ? 'is-expanded' : ''}`}
+                              key={e.id}
+                            >
+                              <div className="card-meta">
+                                <span
+                                  className={`category-badge ${e.category.toLowerCase().includes('polite') || e.category.toLowerCase().includes('courtesy') ? 'peach' : ''}`}
                                 >
-                                  Delete expression
+                                  {e.category}
+                                </span>
+                                <span>LESSON {e.lesson}</span>
+                              </div>
+                              <div className="card-title">
+                                <h2 lang="fr">{e.french}</h2>
+                                <button
+                                  className="icon-button listen-icon"
+                                  aria-label={`Listen to ${e.french}`}
+                                  onClick={() => audio.play(e)}
+                                >
+                                  <Icon name="speaker" size={21} />
                                 </button>
                               </div>
-                            )}
-                          </article>
-                        ))}
+                              <div className="card-language-row">
+                                <span className="field-label">
+                                  MEANING & NOTES
+                                </span>
+                                <LanguageToggle
+                                  language={language}
+                                  onChange={(next) =>
+                                    setCardLanguages((current) => ({
+                                      ...current,
+                                      [e.id]: next,
+                                    }))
+                                  }
+                                />
+                              </div>
+                              <p className="english-meaning" lang={language}>
+                                {text.meaning}
+                              </p>
+                              <div className="card-pronunciation">
+                                <span>{language.toUpperCase()}</span>
+                                <span lang={language}>
+                                  {text.pronunciation}
+                                </span>
+                                <small>approximate pronunciation</small>
+                              </div>
+                              <div className="card-footer">
+                                <button
+                                  className="text-button"
+                                  aria-expanded={expanded === e.id}
+                                  aria-controls={`details-${e.id}`}
+                                  onClick={() => {
+                                    audio.stop()
+                                    setExpanded(expanded === e.id ? null : e.id)
+                                  }}
+                                >
+                                  {expanded === e.id
+                                    ? 'Less detail'
+                                    : 'Notes & audio'}
+                                  <span aria-hidden="true">
+                                    {expanded === e.id ? '−' : '+'}
+                                  </span>
+                                </button>
+                                <button
+                                  className="icon-button"
+                                  aria-label={`Edit ${e.french}`}
+                                  onClick={() => edit(e)}
+                                >
+                                  <Icon name="edit" size={16} />
+                                </button>
+                              </div>
+                              {expanded === e.id && (
+                                <div
+                                  className="card-details"
+                                  id={`details-${e.id}`}
+                                >
+                                  <Answer
+                                    expression={e}
+                                    audio={audio}
+                                    language={language}
+                                  />
+                                  {e.tags.length > 0 && (
+                                    <p className="tags">
+                                      {e.tags.map((t) => `#${t}`).join(' ')}
+                                    </p>
+                                  )}
+                                  <button
+                                    className="text-button danger"
+                                    onClick={() => {
+                                      audio.stop()
+                                      setDeleting(e)
+                                    }}
+                                  >
+                                    Delete expression
+                                  </button>
+                                </div>
+                              )}
+                            </article>
+                          )
+                        })}
                       </div>
                     )}
                   </section>

@@ -1,6 +1,7 @@
 import { useEffect, useId, useRef, useState } from 'react'
 import type { FormEvent, ReactNode } from 'react'
-import type { Expression } from './data'
+import type { Expression, LearningLanguage } from './data'
+import { learningText } from './language'
 import { getRecordings } from './audio'
 import type { AudioController, RecordingVoice } from './audio'
 
@@ -144,38 +145,68 @@ export function AudioControls({
   )
 }
 
+export function LanguageToggle({
+  language,
+  onChange,
+}: {
+  language: LearningLanguage
+  onChange: (language: LearningLanguage) => void
+}) {
+  return (
+    <div className="language-toggle" role="group" aria-label="Card language">
+      {(['tr', 'en'] as const).map((value) => (
+        <button
+          key={value}
+          type="button"
+          aria-label={value === 'tr' ? 'Turkish' : 'English'}
+          aria-pressed={language === value}
+          onClick={() => onChange(value)}
+        >
+          {value.toUpperCase()}
+        </button>
+      ))}
+    </div>
+  )
+}
+
 export function Answer({
   expression: e,
   audio,
+  language,
   includeAudio = true,
 }: {
   expression: Expression
   audio: AudioController
+  language: LearningLanguage
   includeAudio?: boolean
 }) {
+  const text = learningText(e, language)
   return (
     <div className="answer-content">
       <div className="answer-meanings">
-        <p>
-          <span className="field-label">ENGLISH</span>
-          {e.english}
-        </p>
-        <p lang="tr">
-          <span className="field-label">TURKISH</span>
-          {e.turkish}
+        <p lang={language}>
+          <span className="field-label" lang="en">
+            {text.label.toUpperCase()}
+          </span>
+          {text.meaning}
         </p>
       </div>
       <div className="pronunciation">
         <span className="field-label">APPROXIMATE PRONUNCIATION</span>
-        <p>
-          <span>EN</span> {e.pronunciationEn}
-        </p>
-        <p lang="tr">
-          <span>TR</span> {e.pronunciationTr}
+        <p lang={language}>
+          <span lang="en">{language.toUpperCase()}</span> {text.pronunciation}
         </p>
       </div>
-      <p className="usage">{e.situation}</p>
-      {e.pronunciationNote && <p className="note">{e.pronunciationNote}</p>}
+      <p className="usage" lang={text.situation.trim() ? language : 'en'}>
+        {text.situation.trim()
+          ? text.situation
+          : `${text.label} situation not added yet.`}
+      </p>
+      <p className="note" lang={text.note?.trim() ? language : 'en'}>
+        {text.note?.trim()
+          ? text.note
+          : `${text.label} pronunciation note not added yet.`}
+      </p>
       {includeAudio && <AudioControls expression={e} audio={audio} />}
     </div>
   )
@@ -289,7 +320,8 @@ export function ExpressionForm({
       turkish: text('turkish'),
       pronunciationEn: text('pronunciationEn'),
       pronunciationTr: text('pronunciationTr'),
-      situation: text('situation'),
+      situationTr: text('situationTr'),
+      situationEn: text('situationEn'),
       category: text('category'),
       tags: text('tags')
         .split(',')
@@ -300,8 +332,11 @@ export function ExpressionForm({
       updatedAt: new Date(
         Math.max(Date.parse(now), Date.parse(expression?.updatedAt ?? now)),
       ).toISOString(),
-      ...(text('pronunciationNote')
-        ? { pronunciationNote: text('pronunciationNote') }
+      ...(text('pronunciationNoteTr')
+        ? { pronunciationNoteTr: text('pronunciationNoteTr') }
+        : {}),
+      ...(text('pronunciationNoteEn')
+        ? { pronunciationNoteEn: text('pronunciationNoteEn') }
         : {}),
       ...(text('audioUrl') ? { audioUrl: text('audioUrl') } : {}),
       ...(text('femaleAudioUrl')
@@ -332,8 +367,16 @@ export function ExpressionForm({
         autoFocus={name === 'french'}
         type={type}
         min={type === 'number' ? 1 : undefined}
-        maxLength={type === 'url' ? 2048 : 1000}
-        lang={name === 'french' ? 'fr' : undefined}
+        maxLength={
+          type === 'url' ? 2048 : name.startsWith('situation') ? 4000 : 1000
+        }
+        lang={
+          name === 'french'
+            ? 'fr'
+            : name.endsWith('Tr') || name === 'turkish'
+              ? 'tr'
+              : 'en'
+        }
       />
     </label>
   )
@@ -365,16 +408,35 @@ export function ExpressionForm({
           {input('pronunciationEn', 'English approximation')}
           {input('pronunciationTr', 'Turkish approximation')}
         </div>
-        {input('situation', 'When would you use it?')}
-        <label>
-          Pronunciation note <span className="optional">· optional</span>
-          <textarea
-            name="pronunciationNote"
-            rows={3}
-            maxLength={5000}
-            defaultValue={expression?.pronunciationNote}
-          />
-        </label>
+        <fieldset className="localized-fields">
+          <legend>Usage situations</legend>
+          <p className="small muted">
+            Add at least one situation. Add both translations when available;
+            cards won’t substitute the other language if one is missing.
+          </p>
+          {input('situationTr', 'Usage situation · Turkish', true)}
+          {input('situationEn', 'Usage situation · English', true)}
+        </fieldset>
+        <fieldset className="localized-fields">
+          <legend>Pronunciation notes</legend>
+          {(['tr', 'en'] as const).map((language) => {
+            const name =
+              language === 'tr' ? 'pronunciationNoteTr' : 'pronunciationNoteEn'
+            return (
+              <label key={name}>
+                Pronunciation note · {language === 'tr' ? 'Turkish' : 'English'}{' '}
+                <span className="optional">· optional</span>
+                <textarea
+                  name={name}
+                  lang={language}
+                  rows={3}
+                  maxLength={8000}
+                  defaultValue={expression?.[name]}
+                />
+              </label>
+            )
+          })}
+        </fieldset>
         <div className="form-grid">
           {input('category', 'Category')}
           {input('lesson', 'Lesson number', false, 'number')}

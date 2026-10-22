@@ -1,9 +1,16 @@
 import { useEffect, useId, useRef, useState } from 'react'
 import { buildQueue } from './data'
-import type { AppData, Expression, Mode, Rating } from './data'
+import type {
+  AppData,
+  Expression,
+  LearningLanguage,
+  Mode,
+  Rating,
+} from './data'
+import { learningText } from './language'
 import { getRecordings } from './audio'
 import type { AudioController } from './audio'
-import { Answer, AudioControls, Icon } from './components'
+import { Answer, AudioControls, Icon, LanguageToggle } from './components'
 
 type PracticeProps = {
   data: AppData
@@ -31,7 +38,7 @@ const modes: { value: Mode; label: string; instruction: string }[] = [
     value: 'speaking',
     label: 'Speaking',
     instruction:
-      'Use the situation and English cue to say the expression in French.',
+      'Use the situation and meaning cue to say the expression in French.',
   },
   {
     value: 'listening',
@@ -78,6 +85,8 @@ function PracticeCard({
   onSkip: () => void
 }) {
   const [revealed, setRevealed] = useState(false)
+  const [language, setLanguage] = useState<LearningLanguage>('tr')
+  const text = learningText(expression, language)
   const [attemptedAudio, setAttemptedAudio] = useState(false)
   const answerHeading = useRef<HTMLHeadingElement>(null)
   const headingId = useId()
@@ -121,12 +130,19 @@ function PracticeCard({
         {modes.find((item) => item.value === mode)!.instruction}
       </p>
 
+      <div className="practice-language-row">
+        <LanguageToggle language={language} onChange={setLanguage} />
+      </div>
       {mode === 'speaking' && (
         <div className="practice-cue">
           <p className="eyebrow">SITUATION</p>
-          <p>{expression.situation}</p>
-          <p className="eyebrow">ENGLISH CUE</p>
-          <p lang="en">{expression.english}</p>
+          <p lang={text.situation.trim() ? language : 'en'}>
+            {text.situation.trim()
+              ? text.situation
+              : `${text.label} situation not added yet.`}
+          </p>
+          <p className="eyebrow">{text.label.toUpperCase()} CUE</p>
+          <p lang={language}>{text.meaning}</p>
         </div>
       )}
 
@@ -209,6 +225,7 @@ function PracticeCard({
             expression={expression}
             audio={mode === 'listening' ? listeningAudio : audio}
             includeAudio={mode !== 'listening'}
+            language={language}
           />
           {mode !== 'listening' && audio.error && (
             <p role="alert" className="error">

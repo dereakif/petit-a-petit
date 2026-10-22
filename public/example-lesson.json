@@ -9,16 +9,15 @@
       "turkish": "Teşekkür ederim",
       "pronunciationEn": "mehr-SEE",
       "pronunciationTr": "mersi",
-      "situation": "Thank someone who has helped you or handed you something.",
+      "situationEn": "Thank someone who has helped you or handed you something.",
+      "situationTr": "Size yardım eden veya bir şey uzatan birine teşekkür ederken kullanın.",
       "category": "Politeness",
-      "tags": [
-        "basics",
-        "lesson-2"
-      ],
+      "tags": ["basics", "lesson-2"],
       "lesson": 2,
       "createdAt": "2026-10-23T09:00:00.000Z",
       "updatedAt": "2026-10-23T09:00:00.000Z",
-      "pronunciationNote": "Capital letters mark the emphasized practice syllable, not English-style lexical stress. Keep the French r gentle at the back of the throat."
+      "pronunciationNoteEn": "Capital letters mark the emphasized practice syllable, not English-style lexical stress. Keep the French r gentle at the back of the throat.",
+      "pronunciationNoteTr": "Büyük harfler, alıştırmada öne çıkarılan heceyi gösterir; İngilizcedeki gibi sözcük vurgusu anlamına gelmez. Fransızca r sesini boğazın arka kısmında yumuşakça çıkarın."
     },
     {
       "id": "lesson-2-oui",
@@ -27,16 +26,15 @@
       "turkish": "Evet",
       "pronunciationEn": "WEE",
       "pronunciationTr": "ui",
-      "situation": "Answer a simple question affirmatively.",
+      "situationEn": "Answer a simple question affirmatively.",
+      "situationTr": "Basit bir soruya olumlu yanıt verirken kullanın.",
       "category": "Essentials",
-      "tags": [
-        "basics",
-        "lesson-2"
-      ],
+      "tags": ["basics", "lesson-2"],
       "lesson": 2,
       "createdAt": "2026-10-23T09:00:00.000Z",
       "updatedAt": "2026-10-23T09:00:00.000Z",
-      "pronunciationNote": "One short syllable: move directly from w to ee. Capital letters are a practice cue, not a direction to shout."
+      "pronunciationNoteEn": "One short syllable: move directly from w to ee. Capital letters are a practice cue, not a direction to shout.",
+      "pronunciationNoteTr": "Tek, kısa bir hece: w sesinden doğrudan i sesine geçin. Büyük harfler alıştırma içindir; bağırmanız gerektiği anlamına gelmez."
     },
     {
       "id": "lesson-2-non",
@@ -45,16 +43,15 @@
       "turkish": "Hayır",
       "pronunciationEn": "NOHN",
       "pronunciationTr": "non",
-      "situation": "Answer a simple question negatively; add merci when politely declining.",
+      "situationEn": "Answer a simple question negatively; add merci when politely declining.",
+      "situationTr": "Basit bir soruya olumsuz yanıt verirken kullanın; kibarca reddederken merci ekleyin.",
       "category": "Essentials",
-      "tags": [
-        "basics",
-        "lesson-2"
-      ],
+      "tags": ["basics", "lesson-2"],
       "lesson": 2,
       "createdAt": "2026-10-23T09:00:00.000Z",
       "updatedAt": "2026-10-23T09:00:00.000Z",
-      "pronunciationNote": "The ending n marks a nasal vowel: do not pronounce a separate final n. Keep one pure vowel, without an English oh glide."
+      "pronunciationNoteEn": "The ending n marks a nasal vowel: do not pronounce a separate final n. Keep one pure vowel, without an English oh glide.",
+      "pronunciationNoteTr": "Sondaki n, bir geniz ünlüsünü gösterir: sonda ayrı bir n sesi çıkarmayın. İngilizcedeki oh kayması olmadan tek, saf bir ünlü söyleyin."
     }
   ]
 }

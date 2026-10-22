@@ -80,7 +80,14 @@ function repositoryFor(db: IDBDatabase): Repository {
           const missing = request.result === undefined
           const data = missing ? initialData() : validateAppData(request.result)
           result = mutate ? validateAppData(mutate(data)) : data
-          if (missing || mutate) store.put(result, KEY)
+          const legacy =
+            !missing &&
+            (request.result as AppData).expressions.some(
+              (expression) =>
+                Object.hasOwn(expression, 'situation') ||
+                Object.hasOwn(expression, 'pronunciationNote'),
+            )
+          if (missing || mutate || legacy) store.put(result, KEY)
         } catch (error) {
           failure = error
           tx.abort()

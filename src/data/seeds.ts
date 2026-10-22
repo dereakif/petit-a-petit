@@ -1,8 +1,10 @@
 import type { Expression } from './types'
 
 const timestamp = '2026-01-01T00:00:00.000Z'
-const commonNote =
+const commonNoteEn =
   'Capital letters are reading aids, not instructions for strong English word stress. French stress normally falls at the end of a phrase. Nasal n marks a nasal vowel, not a separate pronounced n. Do not add an English “ay” glide to é: keep one pure vowel. French r is made gently at the back of the throat. ü represents French u: round your lips for “oo” while saying “ee” (close to Turkish ü).'
+const commonNoteTr =
+  'Büyük harfler okumayı kolaylaştırır; İngilizcedeki gibi güçlü bir sözcük vurgusu yapmanız gerektiği anlamına gelmez. Fransızcada vurgu genellikle söz öbeğinin sonundadır. Geniz ünlüsünü gösteren n, ayrı bir n sesi olarak okunmaz. é sesine İngilizcedeki “ay” kaymasını eklemeyin: tek, saf bir ünlü söyleyin. Fransızca r, boğazın arka kısmında yumuşakça çıkarılır. ü, Fransızca u sesini gösterir: i derken dudaklarınızı u diyecekmiş gibi yuvarlayın (Türkçedeki ü sesine yakındır).'
 
 function seed(
   id: string,
@@ -11,9 +13,11 @@ function seed(
   turkish: string,
   pronunciationEn: string,
   pronunciationTr: string,
-  situation: string,
+  situationEn: string,
+  situationTr: string,
   category: string,
-  note = '',
+  noteEn: string,
+  noteTr: string,
 ): Expression {
   return {
     id: `seed-${id}`,
@@ -22,13 +26,15 @@ function seed(
     turkish,
     pronunciationEn,
     pronunciationTr,
-    situation,
+    situationEn,
+    situationTr,
     category,
     tags: ['basics', 'lesson-1'],
     lesson: 1,
     createdAt: timestamp,
     updatedAt: timestamp,
-    pronunciationNote: `${commonNote}${note ? ` ${note}` : ''}`,
+    pronunciationNoteEn: `${commonNoteEn} ${noteEn}`,
+    pronunciationNoteTr: `${commonNoteTr} ${noteTr}`,
   }
 }
 
@@ -41,8 +47,10 @@ export const seedExpressions: Expression[] = [
     'bohn-ZHOOR',
     'bonjur',
     'Greet someone during the day, for example when entering a shop.',
+    'Gündüz birini selamlarken, örneğin bir dükkâna girerken kullanın.',
     'Greetings',
     'The on is nasal: do not finish it with a hard n.',
+    'on bir geniz ünlüsüdür: sonunda belirgin bir n sesi çıkarmayın.',
   ),
   seed(
     'bonsoir',
@@ -52,8 +60,10 @@ export const seedExpressions: Expression[] = [
     'bohn-SWAHR',
     'bonsuar',
     'Greet someone in the evening.',
+    'Akşam birini selamlarken kullanın.',
     'Greetings',
     'The on is nasal; soir is one syllable.',
+    'on bir geniz ünlüsüdür; soir tek hecedir.',
   ),
   seed(
     'desole',
@@ -63,8 +73,10 @@ export const seedExpressions: Expression[] = [
     'day-zoh-LAY',
     'dezole',
     'Apologize for a small mistake.',
+    'Küçük bir hata için özür dilerken kullanın.',
     'Politeness',
     'Use désolée in writing for a feminine speaker. The day and LAY spellings are approximations: say pure é vowels without an English ay glide.',
+    'Konuşan kişi kadınsa yazıda désolée biçimini kullanın. day ve LAY yazımları yaklaşık okunuşlardır: İngilizcedeki ay kayması olmadan saf é ünlüleri söyleyin.',
   ),
   seed(
     'anglais',
@@ -74,8 +86,10 @@ export const seedExpressions: Expression[] = [
     'ahn-GLAY',
     'angle',
     'Name the English language, for example when asking which language someone speaks.',
+    'İngilizceden söz ederken, örneğin birinin hangi dili konuştuğunu sorarken kullanın.',
     'Languages',
     'The an is nasal. The final s is silent; GLAY ends in a pure vowel, not an ay glide.',
+    'an bir geniz ünlüsüdür. Sondaki s okunmaz; GLAY, ay kaymasıyla değil, saf bir ünlüyle biter.',
   ),
   seed(
     'sil-vous-plait',
@@ -85,8 +99,10 @@ export const seedExpressions: Expression[] = [
     'seel voo PLEH',
     'sil vu ple',
     'Add politeness to a request when addressing a stranger or more than one person.',
+    'Tanımadığınız birine veya birden fazla kişiye hitap ederken isteğinizi kibarlaştırmak için kullanın.',
     'Politeness',
     'The final t in plaît is silent.',
+    'plaît sözcüğünün sonundaki t okunmaz.',
   ),
   seed(
     'excusez-moi',
@@ -96,8 +112,10 @@ export const seedExpressions: Expression[] = [
     'ehk-skü-zay MWAH',
     'eksküze mua',
     'Politely get someone’s attention or pass by them.',
+    'Birinin dikkatini kibarca çekmek veya yanından geçmek için kullanın.',
     'Politeness',
     'Keep the ü rounded; zay uses a pure é, without an English ay glide.',
+    'ü sesinde dudaklarınızı yuvarlak tutun; zay, İngilizcedeki ay kayması olmadan saf bir é sesiyle söylenir.',
   ),
   seed(
     'au-revoir',
@@ -107,7 +125,9 @@ export const seedExpressions: Expression[] = [
     'oh ruh-VWAHR',
     'o rövuar',
     'Say goodbye when leaving a shop or ending a conversation.',
+    'Bir dükkândan ayrılırken veya konuşmayı bitirirken vedalaşmak için kullanın.',
     'Greetings',
     'Practice backward: vuar → rövuar → o rövuar. Keep the French r gentle; the middle vowel can be very short.',
+    'Sondan başlayarak çalışın: vuar → rövuar → o rövuar. Fransızca r sesini yumuşak söyleyin; ortadaki ünlü çok kısa olabilir.',
   ),
 ]

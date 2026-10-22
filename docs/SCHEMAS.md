@@ -38,25 +38,43 @@ newCountToday(data: AppData, now?: Date): number
 
 ## Expression
 
-All fields below are required except `pronunciationNote`, `audioUrl`, `femaleAudioUrl`, and `maleAudioUrl`. Lengths are JavaScript string lengths (UTF-16 code units). Required strings must contain at least one non-whitespace character. Text is retained **literally**: no HTML decoding, escaping, stripping, normalization, or trimming is performed on stored text.
+Canonical expressions use bilingual `situationEn` / `situationTr` and optional `pronunciationNoteEn` / `pronunciationNoteTr`; they never contain `situation` or `pronunciationNote`. All fields below are required in canonical output except the two notes and three recording URLs. Validation accepts a missing alternate situation and normalizes it to `''`, but **at least one situation must be nonblank**. No translation is inferred or copied between languages. Other required strings must contain at least one non-whitespace character. Lengths are JavaScript string lengths (UTF-16 code units). Text is retained **literally**: no HTML decoding, escaping, stripping, normalization, or trimming is performed on stored text.
 
-| Field                                | Type / constraints                                                                                                                                 |
-| ------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `id`                                 | String, at most 200 characters; unique, stable identity                                                                                            |
-| `french`, `english`, `turkish`       | Strings, at most 1,000 characters each                                                                                                             |
-| `pronunciationEn`, `pronunciationTr` | Strings, at most 1,000 characters each                                                                                                             |
-| `situation`                          | String, at most 4,000 characters                                                                                                                   |
-| `category`                           | String, at most 100 characters                                                                                                                     |
-| `tags`                               | Array of at most 50 unique, nonblank strings, at most 80 characters each; empty array allowed                                                      |
-| `lesson`                             | Integer from 1 through 1,000,000                                                                                                                   |
-| `createdAt`, `updatedAt`             | Valid ISO date-times; `updatedAt >= createdAt`                                                                                                     |
-| `pronunciationNote`                  | Optional string, at most 8,000 characters; empty string allowed                                                                                    |
-| `audioUrl`                           | Optional general/default recording URL; absolute HTTP(S), at most 2,048 characters, no credentials, whitespace, control characters, or backslashes |
-| `femaleAudioUrl`, `maleAudioUrl`     | Optional user-labeled female/male recording URLs; each has exactly the same URL constraints as `audioUrl`; omit when unavailable                   |
+| Field                                        | Type / constraints                                                                                                                                 |
+| -------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `id`                                         | String, at most 200 characters; unique, stable identity                                                                                            |
+| `french`, `english`, `turkish`               | Strings, at most 1,000 characters each                                                                                                             |
+| `pronunciationEn`, `pronunciationTr`         | Strings, at most 1,000 characters each                                                                                                             |
+| `situationEn`, `situationTr`                 | Strings, at most 4,000 characters each; either may be empty, but at least one must be nonblank                                                     |
+| `category`                                   | String, at most 100 characters                                                                                                                     |
+| `tags`                                       | Array of at most 50 unique, nonblank strings, at most 80 characters each; empty array allowed                                                      |
+| `lesson`                                     | Integer from 1 through 1,000,000                                                                                                                   |
+| `createdAt`, `updatedAt`                     | Valid ISO date-times; `updatedAt >= createdAt`                                                                                                     |
+| `pronunciationNoteEn`, `pronunciationNoteTr` | Optional strings, at most 8,000 characters each; empty strings allowed                                                                             |
+| `audioUrl`                                   | Optional general/default recording URL; absolute HTTP(S), at most 2,048 characters, no credentials, whitespace, control characters, or backslashes |
+| `femaleAudioUrl`, `maleAudioUrl`             | Optional user-labeled female/male recording URLs; each has exactly the same URL constraints as `audioUrl`; omit when unavailable                   |
 
 Date-times require a four-digit year, actual calendar date, `T`, hours/minutes/seconds, optional 1–3 fractional digits, and `Z` or a numeric timezone offset. Invalid dates such as February 30, hour 24, and leap seconds are rejected. Stored imported offsets are preserved; newly generated timestamps use UTC `toISOString()` output.
 
 IDs are case-sensitive and are never generated/reassigned by imports. UI-created expressions need their own stable unique ID, e.g. `crypto.randomUUID()`, and creation/update timestamps. Editing an expression replaces its supplied fields but leaves its reviews untouched; the caller supplies `updatedAt`. `saveExpression()` does not forbid equal French text under distinct IDs. Import duplicate controls are separate.
+
+### Bilingual shape transition and read compatibility (version 1)
+
+Lesson/backup envelopes and the IndexedDB database remain **version 1**. This is a canonical expression shape transition with backwards-compatible reads, not a new envelope version. Older application builds are not guaranteed to read new exports. The exported `Expression` TypeScript interface describes only the new canonical shape; legacy keys are accepted only as runtime compatibility input by validation, including lesson parsing, backup parsing/restoring, exports, saves, and persisted-state loading.
+
+- Legacy `situation` maps literally to `situationEn`; if no Turkish situation was supplied, `situationTr` becomes `''`.
+- Legacy `pronunciationNote` maps literally to `pronunciationNoteEn`; if no Turkish note was supplied, `pronunciationNoteTr` stays **omitted**, not synthesized. Notes remain independently optional; `''` is valid.
+- Mixed transitional input is valid: a hand-edited backup may contain both new note fields but still use legacy `situation`, or new situations with a legacy note. Supplied Turkish fields are retained unchanged.
+- New English fields take precedence only when the legacy counterpart is absent or **exactly equal**. If old and new English text differ (even whitespace or an explicit empty new value), validation rejects with both field names and asks the user to reconcile the text and remove the legacy key. It never silently discards either value. Legacy values are type/length-validated even when new fields are present.
+- Every supplied situation must be a string of at most 4,000 characters. A missing alternate normalizes to `''`; whitespace is retained literally but does not satisfy the nonblank requirement. No situations, or only blank situations, produces an actionable error asking for `situationEn` or `situationTr`. A supplied non-string situation (including `null` or direct-input `undefined`) is invalid, not treated as a missing translation.
+- Every supplied note must be a string of at most 8,000 characters; omitted or direct-input `undefined` optional new notes are ignored. Legacy keys, if present, must have valid string values.
+- Returned canonical objects and all new exports contain **only** the new names, never legacy keys. IDs, literal timestamps, recording URLs, reviews, preferences, and the initialized marker are preserved. Import replacement/skip/duplicate policies are unchanged.
+
+For example, the legacy fragment `{"situation":"Greet someone.","pronunciationNote":"Keep r gentle."}` becomes `{"situationEn":"Greet someone.","situationTr":"","pronunciationNoteEn":"Keep r gentle."}`. These are fragments, not complete expressions. Missing translations stay missing; only the bundled initial seeds and example lesson supply authored translations.
+
+`load()` (also called by `openRepository()`) validates the **entire** saved state and, if any expression has a legacy key, atomically writes the canonical migration before resolving. Untouched canonical state is not rewritten on each load. Invalid state or a failed migration write leaves the old record unchanged and rejects; no partial migration or fallback reseeding occurs. Existing seed expressions are migrated as user data, never replaced with the new bilingual seeds: their old English text is retained and missing Turkish translations remain missing unless the user explicitly imports/edits them. Deleted seeds are never resurrected.
+
+`LearningLanguage = 'tr' | 'en'` is exported for consumers. It does not add a preference or change scheduling/review semantics.
 
 ### Optional recordings (additive version 1 fields)
 
@@ -64,7 +82,7 @@ IDs are case-sensitive and are never generated/reassigned by imports. UI-created
 
 Default playback chooses the first available URL in this order: **`audioUrl` → `femaleAudioUrl` → `maleAudioUrl`**. The recording picker lets the user choose a supplied recording for normal-speed or slower playback; it does not select or infer synthesized voice gender. This order selects an initial recording, not a silent fallback on network/playback failure.
 
-These are additive optional fields within the existing **version 1** lesson and backup envelopes and IndexedDB schema. No version bump, migration, new preferences, or review changes are required. Old data without these fields remains valid and unchanged. Saves, lesson imports/exports, and full backup exports/restores retain supplied recording fields. Import updates still replace expression metadata under the existing merge policies and preserve all per-mode progress; omitting a field in replacement metadata does not merge it from the old expression.
+These are additive optional fields within the existing **version 1** lesson and backup envelopes and IndexedDB schema. The recording fields require no version bump, recording migration, new preferences, or review changes. Old data without these recording fields remains valid; the independent bilingual text migration is described above. Saves, lesson imports/exports, and full backup exports/restores retain supplied recording fields. Import updates still replace expression metadata under the existing merge policies and preserve all per-mode progress; omitting a field in replacement metadata does not merge it from the old expression.
 
 For illustration only, the following is a recording-fields fragment, **not a complete expression**. These `example.com` URLs are placeholders, not playable recordings; replace them with real URLs you trust, or omit the fields entirely:
 
@@ -85,6 +103,7 @@ All three recording fields use the same `validateAudioUrl()` rules, with errors 
 ## Preferences and application state
 
 ```ts
+type LearningLanguage = 'tr' | 'en'
 type Mode = 'speaking' | 'listening' | 'reading'
 type Rating = 'again' | 'hard' | 'good' | 'easy'
 
@@ -130,7 +149,7 @@ An application state can contain at most 10,000 expressions, 30,000 reviews, and
 }
 ```
 
-`public/example-lesson.json` is a complete **tomorrow / lesson 2** example dated October 23, 2026, containing **Merci**, **Oui**, and **Non** with English/Turkish guides. Its date is metadata, not a release gate: a lesson becomes available as soon as it is imported. It deliberately omits all optional recording URLs rather than inventing playable links. Add `audioUrl`, `femaleAudioUrl`, and/or `maleAudioUrl` to an expression only when you have real recordings. `createLesson(data)` exports all expression metadata, including supplied recording URLs, and **no** reviews or preferences.
+`public/example-lesson.json` is a complete **tomorrow / lesson 2** example dated October 23, 2026, containing **Merci**, **Oui**, and **Non** with English/Turkish pronunciation guides, situations, and pronunciation notes. Its date is metadata, not a release gate: a lesson becomes available as soon as it is imported. It deliberately omits all optional recording URLs rather than inventing playable links. Add `audioUrl`, `femaleAudioUrl`, and/or `maleAudioUrl` to an expression only when you have real recordings. `createLesson(data)` exports all expression metadata, including supplied recording URLs, and **no** reviews or preferences.
 
 All incoming expressions are validated before any import writes. IDs must be unique within the lesson; equal normalized French under distinct IDs is allowed in the file so the user can resolve it via preview/import options.
 
@@ -210,7 +229,7 @@ New-to-mode candidates in steps 2–3 are interleaved in deterministic lesson / 
 
 Database: **`petit-a-petit`**, database version **1**. Object store: **`state`**. Singleton key: **`app`** containing `AppData`. Database schema versioning and JSON envelope versioning are separate concerns.
 
-`openRepository()` opens the database and initializes missing state once with the seven stable lesson-one seeds. It only returns after initialization commits. The seed IDs are `seed-bonjour`, `seed-bonsoir`, `seed-desole`, `seed-anglais`, `seed-sil-vous-plait`, `seed-excusez-moi`, and `seed-au-revoir`. Seed notes explain nasal n, pure vowels without English ay glides, French r, rounded ü, capitalization as a practice emphasis cue, and backward **vuar → rövuar → o rövuar** practice.
+`openRepository()` opens the database and initializes missing state once with the seven stable lesson-one seeds. It only returns after initialization commits. The seed IDs are `seed-bonjour`, `seed-bonsoir`, `seed-desole`, `seed-anglais`, `seed-sil-vous-plait`, `seed-excusez-moi`, and `seed-au-revoir`. The initial seeds have genuinely translated English/Turkish situations and notes. Both note languages explain nasal n, pure vowels without English ay glides, French r, rounded ü, capitalization as a reading aid rather than English-style word stress, and backward **vuar → rövuar → o rövuar** practice. These bilingual seeds initialize only missing state; they never overwrite edited or deleted expressions. Loads of existing state persist legacy-field migrations as described above, without a database version upgrade.
 
 All operations use native read-modify-write transactions on the same store. Reads, conflict checks, daily-budget checks, mutations, and writes are performed synchronously inside the request callback, with **no await between reading and writing**. IndexedDB serializes these transactions across repository instances/tabs, preventing lost independent writes and double-spending the last daily slot. Two full edits of the same expression follow normal last-transaction-wins replacement semantics, not field merging. Concurrent whole-state restores intentionally replace the earlier state.
 
@@ -224,4 +243,4 @@ After installing the project's dev tools plus `fake-indexeddb` and Bun types, ru
 bun test tests/data.test.ts
 ```
 
-Tests exercise seed deletion/reopening, literal untrusted text, URL validation, schema failures at nested paths, lesson preview/conflicts and progress preservation, backup round trips/atomic replacement, scheduling intervals and ordering, local-day distinct caps, early ratings, input isolation, concurrent writes across connections, daily-cap races, and injected storage failures. No browser network or audio service is required.
+Tests exercise bilingual seeds/example content, old DB/lesson/backup and mixed-format migrations, missing translations and optional notes, conflicting legacy/new text, canonical-only exports, one-time load persistence and atomic migration failures, seed deletion/reopening, literal untrusted text, URL validation, schema failures at nested paths, lesson preview/conflicts and progress preservation, backup round trips/atomic replacement, scheduling intervals and ordering, local-day distinct caps, early ratings, input isolation, concurrent writes across connections, daily-cap races, and injected storage failures. No browser network or audio service is required.

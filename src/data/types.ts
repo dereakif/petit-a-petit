@@ -1,3 +1,4 @@
+export type LearningLanguage = 'tr' | 'en'
 export type Mode = 'speaking' | 'listening' | 'reading'
 export type Rating = 'again' | 'hard' | 'good' | 'easy'
 
@@ -8,13 +9,15 @@ export interface Expression {
   turkish: string
   pronunciationEn: string
   pronunciationTr: string
-  situation: string
+  situationEn: string
+  situationTr: string
   category: string
   tags: string[]
   lesson: number
   createdAt: string
   updatedAt: string
-  pronunciationNote?: string
+  pronunciationNoteEn?: string
+  pronunciationNoteTr?: string
   audioUrl?: string
   femaleAudioUrl?: string
   maleAudioUrl?: string

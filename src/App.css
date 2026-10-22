@@ -498,7 +498,7 @@ main {
 
 .answer-meanings {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: 1fr;
   gap: 20px;
 }
 
@@ -543,6 +543,53 @@ main {
   line-height: 1.8;
 }
 
+.card-language-row,
+.practice-language-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 12px;
+}
+
+.card-language-row .field-label {
+  margin-bottom: 0;
+}
+
+.practice-language-row {
+  justify-content: flex-end;
+  margin-top: 20px;
+}
+
+.language-toggle {
+  display: inline-flex;
+  gap: 3px;
+  padding: 3px;
+  border: 1px solid #dce3d4;
+  border-radius: 8px;
+  background: #f3f6ee;
+  flex-shrink: 0;
+}
+
+.language-toggle button {
+  min-width: 44px;
+  min-height: 44px;
+  border-radius: 5px;
+  background: transparent;
+  color: #526347;
+  font-size: 11px;
+  font-weight: 650;
+}
+
+.language-toggle button:hover {
+  background: #e5ecd9;
+}
+
+.language-toggle button[aria-pressed='true'] {
+  background: var(--green);
+  color: #fff;
+}
+
 .recording-selector {
   display: flex;
   flex-wrap: wrap;
@@ -564,7 +611,8 @@ main {
   min-height: 44px;
 }
 
-.recording-fields {
+.recording-fields,
+.localized-fields {
   display: flex;
   flex-direction: column;
   gap: 18px;
@@ -575,7 +623,8 @@ main {
   border-radius: 8px;
 }
 
-.recording-fields legend {
+.recording-fields legend,
+.localized-fields legend {
   padding: 0 6px;
   font-weight: 600;
   font-size: 13px;
@@ -884,6 +933,7 @@ main {
 
 .practice-modes button {
   flex: 1;
+  transition: none;
 }
 
 .practice-session-heading {
