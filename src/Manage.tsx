@@ -151,7 +151,7 @@ export default function Manage({
             </button>
             <a
               className="secondary button-link"
-              href="/example-lesson.json"
+              href={`${import.meta.env.BASE_URL}example-lesson.json`}
               download
             >
               Example lesson JSON ↓

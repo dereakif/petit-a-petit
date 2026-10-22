@@ -189,7 +189,7 @@ test.beforeEach(async ({ page }) => {
       pause() {
         harness.recordingPauses++
       }
-      load() {}
+      load() { }
       removeAttribute(name: string) {
         if (name === 'src') this.src = ''
       }
@@ -242,7 +242,7 @@ async function storedData(
   )
 }
 async function openNotebook(page: Page, data = notebook()) {
-  await page.goto('/')
+  await page.goto('./')
   await expect(
     page.getByRole('searchbox', { name: 'Search expressions' }),
   ).toBeVisible()
@@ -623,8 +623,8 @@ test('failed rating writes retain the revealed card; rapid retries save exactly 
     .getByRole('group', { name: 'Rate your recall' })
     .getByRole('button', { name: /^Good\b/ })
     .evaluate((button) => {
-      ;(button as HTMLButtonElement).click()
-      ;(button as HTMLButtonElement).click()
+      ; (button as HTMLButtonElement).click()
+        ; (button as HTMLButtonElement).click()
     })
   await expect(
     page.getByRole('heading', { name: 'Session complete' }),
@@ -1141,6 +1141,7 @@ test('female and male URLs can be edited independently without changing general 
   await page
     .getByRole('button', { name: 'Save expression', exact: true })
     .click()
+  await expect(page.getByRole('searchbox')).toBeVisible()
   await page.reload()
   await expect(page.getByRole('searchbox')).toBeVisible()
   let saved = await storedData(page)
@@ -1324,10 +1325,43 @@ test('a selected female recording never silently falls back to male or speech wh
   expect((await storedData(page)).reviews).toEqual([])
 })
 
+test('production assets and the lesson download resolve under the GitHub Pages subpath', async ({
+  page,
+  request,
+}) => {
+  const response = await page.goto('./')
+  expect(response?.ok()).toBe(true)
+  await expect(page.getByRole('searchbox')).toBeVisible()
+  expect(new URL(page.url()).pathname).toBe('/petit-a-petit/')
+  const script = await page.locator('script[type="module"]').getAttribute('src')
+  expect(script).toMatch(/^\/petit-a-petit\/assets\/.+\.js$/)
+  expect((await request.get(script!)).ok()).toBe(true)
+  const favicon = await page.locator('link[rel="icon"]').getAttribute('href')
+  expect(favicon).toBe('/petit-a-petit/favicon.svg')
+  expect((await request.get(favicon!)).ok()).toBe(true)
+  await navigate(page, 'Manage')
+  const example = page.getByRole('link', { name: 'Example lesson JSON ↓' })
+  await expect(example).toHaveAttribute(
+    'href',
+    '/petit-a-petit/example-lesson.json',
+  )
+  const lesson = await request.get((await example.getAttribute('href'))!)
+  expect(lesson.ok()).toBe(true)
+  expect(await lesson.json()).toMatchObject({
+    kind: 'petit-lesson',
+    version: 1,
+  })
+  const downloading = page.waitForEvent('download')
+  await example.click()
+  const download = await downloading
+  expect(download.suggestedFilename()).toBe('example-lesson.json')
+  expect(await download.failure()).toBeNull()
+})
+
 test('library, revealed practice, and Manage pass automated accessibility checks', async ({
   page,
 }) => {
-  await page.goto('/')
+  await page.goto('./')
   await expect(page.getByRole('searchbox')).toBeVisible()
   const check = async () => {
     const result = await new AxeBuilder({ page })

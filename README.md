@@ -11,7 +11,7 @@ bun install
 bun run dev
 ```
 
-Open the local URL printed by Vite. Keep the same origin (scheme, hostname, and port) to access the same browser database. `localhost` and a LAN hostname/IP have separate storage.
+Open the local URL printed by Vite (normally `http://localhost:5173/petit-a-petit/`). Keep the same origin (scheme, hostname, and port) to access the same browser database. `localhost` and a LAN hostname/IP have separate storage.
 
 ```sh
 bun run lint
@@ -22,6 +22,21 @@ bun run preview
 ```
 
 `bun run build` creates the deployable static app in `dist/`. For an iPhone on your Wi-Fi, run `bun run dev --host 0.0.0.0` and open your Mac’s LAN address with the displayed port. A trusted HTTPS deployment is preferable for regular use. This is a local-first website, not an installed offline PWA.
+
+## Deploy to GitHub Pages
+
+Deployment target: **https://dereakif.github.io/petit-a-petit/**, from the `main` branch of `dereakif/petit-a-petit`.
+
+1. Before moving from localhost, download a **full backup** in Manage. The deployed HTTPS origin has separate browser storage; restore that backup on the deployed app to transfer your notebook. Mac and iPhone still do not automatically sync.
+2. On GitHub, open **Settings → Pages → Build and deployment → Source**, and select **GitHub Actions**. A public repository works with free GitHub Pages; private repositories require a plan that supports Pages. Repository Actions must also be enabled.
+3. Commit and push these repository changes to `main`. The **Deploy to GitHub Pages** workflow starts automatically. For later manual deployments, use **Actions → Deploy to GitHub Pages → Run workflow** on `main`.
+4. Wait for both the build and deploy jobs to pass in Actions, then open the deployment URL above. The `github-pages` environment and deployment log also link to the live site.
+
+[`.github/workflows/deploy.yml`](.github/workflows/deploy.yml) installs Node.js 22 and pinned Bun 1.4.4, installs from `bun.lockb` with `--frozen-lockfile`, runs lint/type-check/data tests, builds the site, and uploads **only `dist/`** through the official Pages actions. Build failures block deployment. It uses GitHub’s automatic workflow token with scoped permissions; no personal access token, deployment secret, or `gh-pages` branch is needed. Subsequent pushes to `main` redeploy automatically. The workflow does not run browser tests; those can be run locally using the command below.
+
+Vite’s `base` is `/petit-a-petit/` in development, builds, and preview. Public-file download links use `import.meta.env.BASE_URL`. If the repository name changes, or you switch to the root profile site or a custom domain, update `vite.config.ts` and the browser-test base URL accordingly. There are no path-based client-side routes requiring a Pages 404 workaround.
+
+Deployment publishes the application, not your browser’s vocabulary or review history. Browser data is never uploaded by this workflow. Any content explicitly committed under `public/` or bundled into the app is public, so do not commit personal backup files or private recordings.
 
 ## Your notebook
 
@@ -110,7 +125,7 @@ Dates are elapsed-time intervals; introduction budgets use local calendar days, 
 ```sh
 bun run test                 # 46 domain / IndexedDB tests
 bunx playwright install chromium
-bun run test:browser         # 23 browser tests, including WCAG checks
+bun run test:browser         # 24 browser tests, including Pages paths and WCAG checks
 bun run lint
 bun run typecheck
 bun run build
@@ -122,7 +137,7 @@ If using an already-installed Chromium binary instead of Playwright’s expected
 PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH=/absolute/path/to/chrome bun run test:browser
 ```
 
-Browser tests use mocked French speech and recordings: answer secrecy in all modes, asynchronous/missing voices, synthesis/recording failures, explicit fallback, rating persistence and write failures, Again requeue, extra-practice isolation, add/edit/delete, import cancellation/atomicity/history preservation, backup replacement, keyboard focus, 390×844 mobile overflow, loading/empty/storage-error states, and automated WCAG 2 AA checks. Playwright starts and stops a bounded local Vite server automatically. Screenshots are written to ignored `test-results/`.
+Browser tests use mocked French speech and recordings: answer secrecy in all modes, asynchronous/missing voices, synthesis/recording failures, explicit fallback, rating persistence and write failures, Again requeue, extra-practice isolation, add/edit/delete, import cancellation/atomicity/history preservation, backup replacement, keyboard focus, 390×844 mobile overflow, loading/empty/storage-error states, and automated WCAG 2 AA checks. Playwright builds the app and starts/stops a local production-preview server automatically, testing the same `/petit-a-petit/` subpath used by GitHub Pages. A deployment regression test checks bundled JavaScript, the favicon, and downloading the example lesson. Screenshots are written to ignored `test-results/`.
 
 **Manual device checks still needed:** real iPhone Safari and macOS voice availability/quality; speaker and slower playback after a tap; silent-mode/device audio routing; real remote recording playback and network failures; switching views during playback; Files download/restore on iPhone; VoiceOver and large-text/zoom ergonomics. Chromium viewport tests are not real iPhone testing, and mocked speech does not validate a device’s provider.
 
