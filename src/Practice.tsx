@@ -1,6 +1,7 @@
 import { useEffect, useId, useRef, useState } from 'react'
 import { buildQueue } from './data'
 import type { AppData, Expression, Mode, Rating } from './data'
+import { getRecordings } from './audio'
 import type { AudioController } from './audio'
 import { Answer, AudioControls, Icon } from './components'
 
@@ -85,17 +86,17 @@ function PracticeCard({
     audio.supported &&
     !!audio.selected &&
     /^fr(?:[-_]|$)/i.test(audio.selected.lang)
-  const hasAudio = !!expression.audioUrl || hasFrenchVoice
+  const hasAudio = getRecordings(expression).length > 0 || hasFrenchVoice
   // stop() does not clear the controller's error, so ignore errors from earlier cards.
   const playbackFailed = attemptedAudio && !!audio.error
   const listeningBlocked = mode === 'listening' && (!hasAudio || playbackFailed)
   const waitingForAudio = mode === 'listening' && audio.playing
   const listeningAudio: AudioController = {
     ...audio,
-    play: (item, slow, synthesized) => {
+    play: (item, slow, synthesized, recordingVoice) => {
       if (disabled) return
       setAttemptedAudio(true)
-      audio.play(item, slow, synthesized)
+      audio.play(item, slow, synthesized, recordingVoice)
     },
   }
 
@@ -207,6 +208,7 @@ function PracticeCard({
           <Answer
             expression={expression}
             audio={mode === 'listening' ? listeningAudio : audio}
+            includeAudio={mode !== 'listening'}
           />
           {mode !== 'listening' && audio.error && (
             <p role="alert" className="error">

@@ -162,6 +162,8 @@ export function validateExpression(
     'updatedAt',
     'pronunciationNote',
     'audioUrl',
+    'femaleAudioUrl',
+    'maleAudioUrl',
   ])
   const result: Expression = {
     id: text(obj.id, `${path}.id`, 200),
@@ -190,14 +192,15 @@ export function validateExpression(
       8000,
       true,
     )
-  if (obj.audioUrl !== undefined) {
-    const url = text(obj.audioUrl, `${path}.audioUrl`, 2048)
+  for (const field of ['audioUrl', 'femaleAudioUrl', 'maleAudioUrl'] as const) {
+    if (obj[field] === undefined) continue
+    const url = text(obj[field], `${path}.${field}`, 2048)
     if (!validateAudioUrl(url))
       fail(
-        `${path}.audioUrl`,
+        `${path}.${field}`,
         'must be an absolute http:// or https:// URL without credentials, whitespace, or backslashes; omit it if unavailable.',
       )
-    result.audioUrl = url
+    result[field] = url
   }
   return result
 }

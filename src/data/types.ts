@@ -16,6 +16,8 @@ export interface Expression {
   updatedAt: string
   pronunciationNote?: string
   audioUrl?: string
+  femaleAudioUrl?: string
+  maleAudioUrl?: string
 }
 
 export interface Preferences {

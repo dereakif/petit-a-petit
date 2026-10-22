@@ -1,7 +1,8 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useId, useRef, useState } from 'react'
 import type { FormEvent, ReactNode } from 'react'
 import type { Expression } from './data'
-import type { AudioController } from './audio'
+import { getRecordings } from './audio'
+import type { AudioController, RecordingVoice } from './audio'
 
 export function Icon({ name, size = 20 }: { name: string; size?: number }) {
   const paths: Record<string, ReactNode> = {
@@ -77,12 +78,39 @@ export function AudioControls({
   audio: AudioController
   listening?: boolean
 }) {
+  const recordings = getRecordings(expression)
+  const [voice, setVoice] = useState<RecordingVoice | undefined>(undefined)
+  const selectedRecording =
+    recordings.find((item) => item.voice === voice) ?? recordings[0]
+  const selectorId = useId()
   return (
     <div className="audio-block">
+      {selectedRecording && (
+        <div className="recording-selector">
+          <label htmlFor={selectorId}>Recording</label>
+          <select
+            id={selectorId}
+            aria-label="Recording voice"
+            value={selectedRecording.voice}
+            onChange={(event) => {
+              audio.stop()
+              setVoice(event.target.value as RecordingVoice)
+            }}
+          >
+            {recordings.map((item) => (
+              <option key={item.voice} value={item.voice}>
+                {item.label}
+              </option>
+            ))}
+          </select>
+        </div>
+      )}
       <div className="audio-buttons">
         <button
           className="audio-button"
-          onClick={() => audio.play(expression)}
+          onClick={() =>
+            audio.play(expression, false, false, selectedRecording?.voice)
+          }
           aria-label={
             listening ? 'Play French audio' : `Listen to ${expression.french}`
           }
@@ -92,7 +120,9 @@ export function AudioControls({
         </button>
         <button
           className="text-button slow-button"
-          onClick={() => audio.play(expression, true)}
+          onClick={() =>
+            audio.play(expression, true, false, selectedRecording?.voice)
+          }
         >
           Slower <span aria-hidden="true">↘</span>
         </button>
@@ -102,7 +132,7 @@ export function AudioControls({
           </button>
         )}
       </div>
-      {expression.audioUrl && (
+      {recordings.length > 0 && (
         <button
           className="text-button fallback"
           onClick={() => audio.play(expression, false, true)}
@@ -117,9 +147,11 @@ export function AudioControls({
 export function Answer({
   expression: e,
   audio,
+  includeAudio = true,
 }: {
   expression: Expression
   audio: AudioController
+  includeAudio?: boolean
 }) {
   return (
     <div className="answer-content">
@@ -144,7 +176,7 @@ export function Answer({
       </div>
       <p className="usage">{e.situation}</p>
       {e.pronunciationNote && <p className="note">{e.pronunciationNote}</p>}
-      <AudioControls expression={e} audio={audio} />
+      {includeAudio && <AudioControls expression={e} audio={audio} />}
     </div>
   )
 }
@@ -272,6 +304,10 @@ export function ExpressionForm({
         ? { pronunciationNote: text('pronunciationNote') }
         : {}),
       ...(text('audioUrl') ? { audioUrl: text('audioUrl') } : {}),
+      ...(text('femaleAudioUrl')
+        ? { femaleAudioUrl: text('femaleAudioUrl') }
+        : {}),
+      ...(text('maleAudioUrl') ? { maleAudioUrl: text('maleAudioUrl') } : {}),
     }
     if (!(await onSave(result)))
       setError(
@@ -296,7 +332,7 @@ export function ExpressionForm({
         autoFocus={name === 'french'}
         type={type}
         min={type === 'number' ? 1 : undefined}
-        maxLength={name === 'audioUrl' ? 2048 : 1000}
+        maxLength={type === 'url' ? 2048 : 1000}
         lang={name === 'french' ? 'fr' : undefined}
       />
     </label>
@@ -351,7 +387,31 @@ export function ExpressionForm({
             maxLength={1000}
           />
         </label>
-        {input('audioUrl', 'Recorded audio URL (HTTP/HTTPS)', true, 'url')}
+        <fieldset className="recording-fields">
+          <legend>Recorded French audio</legend>
+          <p className="small muted">
+            Add either or both voice recordings if you find them. These labels
+            describe the recordings you supply, not browser-generated voices.
+          </p>
+          {input(
+            'femaleAudioUrl',
+            'Female voice audio URL (HTTP/HTTPS)',
+            true,
+            'url',
+          )}
+          {input(
+            'maleAudioUrl',
+            'Male voice audio URL (HTTP/HTTPS)',
+            true,
+            'url',
+          )}
+          {input('audioUrl', 'Recorded audio URL (HTTP/HTTPS)', true, 'url')}
+          <p className="small muted">
+            The general recording field keeps any existing URL. Without one,
+            Listen starts with the female recording, then male. Use Notes &
+            audio to choose a recording.
+          </p>
+        </fieldset>
         <p className="small muted">
           Remote recordings contact the URL’s provider and may require an
           internet connection.

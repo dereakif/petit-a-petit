@@ -46,6 +46,8 @@ Pronunciation guides are clearly labeled approximations, not phonetic transcript
 
 For just one expression, use **Add an expression** instead. All form data stays visible if saving fails.
 
+To attach real recordings, edit an expression’s optional general/default URL (`audioUrl`), female recording URL (`femaleAudioUrl`), and/or male recording URL (`maleAudioUrl`) in the add/edit form, or add those fields to its lesson JSON and import with the same stable ID using **replace vocabulary**. Omit unavailable fields in JSON rather than using empty strings or `null`. Neither labeled recording is required; one or both may be supplied, with or without a general recording. The downloadable example intentionally has no recording URLs—do not invent links. Lesson exports and full backups retain all supplied recording URLs; matching-ID vocabulary updates leave progress in every practice mode unchanged.
+
 ## JSON formats
 
 Full contracts, required fields, validation limits, scheduling details, and examples are in [`docs/SCHEMAS.md`](docs/SCHEMAS.md). The formats are intentionally different:
@@ -70,7 +72,7 @@ A vocabulary export is also a lesson import. It excludes progress and settings.
 }
 ```
 
-Imports are runtime-validated, including nested histories, timestamps, IDs, references, and HTTP(S) audio URLs. Unknown fields/versions are rejected rather than silently discarded. Imported text is rendered as text, never HTML. Files are limited to 10 MB in the interface.
+The three recording URL fields are optional additions to the existing version-1 schema: lesson/backup envelopes and the IndexedDB schema remain version 1, with no migration needed; old data remains valid unchanged. Imports are runtime-validated, including nested histories, timestamps, IDs, references, and identical HTTP(S) safety rules for all three audio URL fields. Unknown fields/versions are rejected rather than silently discarded. Imported text is rendered as text, never HTML. Files are limited to 10 MB in the interface.
 
 ## Back up, restore, or transfer devices
 
@@ -86,7 +88,7 @@ Imports are runtime-validated, including nested histories, timestamps, IDs, refe
 
 The app prefers `fr-FR`, then another French voice, and listens for asynchronous `voiceschanged` updates. It never substitutes an English voice. A missing saved voice produces feedback and falls back only to available French voices. Voice and speed preferences persist.
 
-Playback requires an explicit tap/click. Starting another playback cancels the previous one; leaving a card or view stops it. Normal synthesis uses your saved speed; **Slower** uses 72% of it. Recorded audio uses 1× or 0.75×. An expression’s recording is preferred when present. Recording failures are visible, and **Use French speech instead of recording** is an explicit fallback, never a silent one.
+Playback requires an explicit tap/click. Starting another playback cancels the previous one; leaving a card or view stops it. Normal synthesis uses your saved speed; **Slower** uses 72% of it. Recorded audio uses 1× or 0.75×. An expression’s recording is preferred when present: the default is the general `audioUrl` first, then `femaleAudioUrl`, then `maleAudioUrl`. Use the recording picker to select an available general, female, or male recording, then tap **Listen** (or **Play French** in listening practice) or **Slower**. Female/male are speaker labels supplied by you for recordings, not gender inferred from the audio or a promise about synthesized voices. With no recording URLs, French speech remains available. Recording failures are visible, and **Use French speech instead of recording** is an explicit fallback, never a silent one.
 
 Voice availability, quality, provider behavior, and offline audio depend on the device. **Offline audio is not guaranteed.** The browser/provider may process synthesis remotely. A recording contacts its URL’s host; do not add private URLs you do not trust. Only absolute HTTP(S) URLs without credentials are accepted; HTTP recordings may be blocked as mixed content on HTTPS sites. Typography currently uses Google Fonts with system fallbacks; those font requests contact Google but do not contain vocabulary or review data.
 
@@ -106,9 +108,9 @@ Dates are elapsed-time intervals; introduction budgets use local calendar days, 
 ## Verification
 
 ```sh
-bun run test                 # 39 domain / IndexedDB tests
+bun run test                 # 46 domain / IndexedDB tests
 bunx playwright install chromium
-bun run test:browser         # 18 browser tests, including WCAG checks
+bun run test:browser         # 23 browser tests, including WCAG checks
 bun run lint
 bun run typecheck
 bun run build

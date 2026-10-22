@@ -436,6 +436,46 @@ describe('lesson parsing, preview, and merging', () => {
     expect(allowed.expressions[0]!.french).toBe('French b')
   })
 
+  test('recording imports, updates, and vocabulary exports preserve all mode progress', async () => {
+    const original = expression('a', {
+      audioUrl: 'https://example.com/original.mp3',
+      femaleAudioUrl: 'https://example.com/original-female.mp3',
+      maleAudioUrl: 'https://example.com/original-male.mp3',
+    })
+    const repo = await repository(data([original]))
+    await repo.rate('a', 'speaking', 'good', now)
+    await repo.rate('a', 'listening', 'hard', now)
+    const before = await repo.rate('a', 'reading', 'easy', now)
+    const update = expression('a', {
+      english: 'Updated with recordings',
+      audioUrl: 'https://example.com/general.mp3',
+      femaleAudioUrl: 'https://example.com/female.mp3',
+      maleAudioUrl: 'https://example.com/male.mp3',
+    })
+    const addition = expression('new', {
+      femaleAudioUrl: 'http://example.com/new-female.mp3',
+      maleAudioUrl: 'https://example.com/new-male.mp3',
+    })
+    const incoming = parseLesson(JSON.stringify(lesson([update, addition])))
+    expect(previewLesson(incoming, before.expressions)).toEqual({
+      additions: [addition],
+      updates: [update],
+      duplicates: [],
+    })
+    const skipped = await repo.applyLesson(incoming, 'skip', false)
+    expect(skipped.expressions).toEqual([original, addition])
+    expect(skipped.reviews).toEqual(before.reviews)
+    const updated = await repo.applyLesson(incoming, 'update', false)
+    expect(updated.expressions).toEqual([update, addition])
+    expect(updated.reviews).toEqual(before.reviews)
+    expect(updated.preferences).toEqual(before.preferences)
+    const exported = createLesson(updated)
+    expect(exported.version).toBe(1)
+    expect(parseLesson(JSON.stringify(exported))).toEqual(incoming)
+    repo.close()
+    expect(await (await repository()).load()).toEqual(updated)
+  })
+
   test('the tomorrow lesson example parses and is lesson two', async () => {
     const text = await Bun.file(
       new URL('../public/example-lesson.json', import.meta.url),
@@ -443,6 +483,11 @@ describe('lesson parsing, preview, and merging', () => {
     const example = parseLesson(text)
     expect(example.expressions).toHaveLength(3)
     expect(example.expressions.every((item) => item.lesson === 2)).toBe(true)
+    for (const item of example.expressions) {
+      expect(item.audioUrl).toBeUndefined()
+      expect(item.femaleAudioUrl).toBeUndefined()
+      expect(item.maleAudioUrl).toBeUndefined()
+    }
   })
 })
 
@@ -485,6 +530,60 @@ describe('complete runtime schema validation', () => {
         parseLesson(JSON.stringify(lesson([expression('a', fields)]))),
       ).toThrow()
   })
+
+  test.each(['audioUrl', 'femaleAudioUrl', 'maleAudioUrl'] as const)(
+    '%s uses the same URL safety rules and reports the exact field path',
+    (field) => {
+      for (const url of [
+        'https://example.com/a.mp3',
+        'http://localhost:8080/audio?q=1#part',
+        'HTTPS://example.com/%20.mp3',
+        `https://example.com/${'a'.repeat(2028)}`,
+      ]) {
+        const item = expression('a', { [field]: url })
+        expect(parseLesson(JSON.stringify(lesson([item]))).expressions).toEqual(
+          [item],
+        )
+      }
+      for (const value of [
+        null,
+        42,
+        true,
+        [],
+        {},
+        '',
+        ' ',
+        '/audio.mp3',
+        '//example.com/a',
+        'https:example.com/a',
+        'javascript:alert(1)',
+        'data:audio/mp3;base64,AAA',
+        'blob:https://example.com/x',
+        'file:///tmp/a',
+        'https://user:pass@example.com/a',
+        'https://user@example.com',
+        'https://@example.com',
+        ' https://example.com/a',
+        'https://example.com/a ',
+        'https://example.com/with space',
+        'https://example.com/\\na',
+        'https://example.com/\\u0000a',
+        'https://example.com/\\u007fa',
+        'https://example.com\\\\evil',
+        'https://',
+        `https://example.com/${'a'.repeat(2029)}`,
+      ]) {
+        const invalid = lesson([expression('a', { [field]: value })])
+        expect(() => parseLesson(JSON.stringify(invalid))).toThrow(
+          `lesson.expressions[0].${field}:`,
+        )
+      }
+      const omitted = createLesson(
+        data([expression('a', { [field]: undefined })]),
+      )
+      expect(Object.hasOwn(omitted.expressions[0]!, field)).toBe(false)
+    },
+  )
 
   test('preserves valid timestamp offsets and literal user text', () => {
     const item = expression('a', {
@@ -581,11 +680,25 @@ describe('complete runtime schema validation', () => {
   })
 
   test('backup and lesson exports are detached, valid round trips, with no progress in lessons', () => {
-    const state = data()
+    const state = data([
+      expression('a', {
+        audioUrl: 'https://example.com/general.mp3',
+        femaleAudioUrl: 'https://example.com/female.mp3',
+        maleAudioUrl: 'https://example.com/male.mp3',
+      }),
+      expression('b', {
+        femaleAudioUrl: 'https://example.com/only-female.mp3',
+      }),
+      expression('c', { maleAudioUrl: 'https://example.com/only-male.mp3' }),
+    ])
     state.reviews = [review('a', 'speaking')]
     const backup = createBackup(state)
+    expect(backup.version).toBe(1)
+    expect(backup.data).toEqual(state)
     expect(parseBackup(JSON.stringify(backup))).toEqual(backup)
     const exportedLesson = createLesson(state)
+    expect(exportedLesson.version).toBe(1)
+    expect(exportedLesson.expressions).toEqual(state.expressions)
     expect(parseLesson(JSON.stringify(exportedLesson))).toEqual(exportedLesson)
     expect(Object.keys(exportedLesson).sort()).toEqual([
       'expressions',
@@ -593,6 +706,14 @@ describe('complete runtime schema validation', () => {
       'version',
     ])
     backup.data.expressions[0]!.french = 'Changed copy'
+    backup.data.expressions[0]!.femaleAudioUrl = 'https://example.com/copy.mp3'
+    exportedLesson.expressions[0]!.maleAudioUrl = 'https://example.com/copy.mp3'
+    expect(state.expressions[0]!.femaleAudioUrl).toBe(
+      'https://example.com/female.mp3',
+    )
+    expect(state.expressions[0]!.maleAudioUrl).toBe(
+      'https://example.com/male.mp3',
+    )
     exportedLesson.expressions[1]!.tags.push('copy-only')
     expect(state.expressions[0]!.french).toBe('French a')
     expect(state.expressions[1]!.tags).not.toContain('copy-only')
@@ -613,6 +734,35 @@ describe('IndexedDB persistence, atomicity, and errors', () => {
       preferences: defaultPreferences,
       initialized: true,
     })
+  })
+
+  test('all optional recording combinations save and survive reopening without a schema upgrade', async () => {
+    const repo = await repository(data([]))
+    const recordings = {
+      audioUrl: 'https://example.com/general.mp3',
+      femaleAudioUrl: 'https://example.com/female.mp3',
+      maleAudioUrl: 'http://example.com/male.mp3',
+    }
+    const items: Expression[] = []
+    for (let mask = 0; mask < 8; mask += 1) {
+      const item = expression(`recordings-${mask}`)
+      if (mask & 1) item.audioUrl = recordings.audioUrl
+      if (mask & 2) item.femaleAudioUrl = recordings.femaleAudioUrl
+      if (mask & 4) item.maleAudioUrl = recordings.maleAudioUrl
+      items.push(item)
+      const saved = await repo.saveExpression(item)
+      expect(saved.expressions).toEqual(items)
+    }
+    repo.close()
+    const reopened = await repository()
+    expect((await reopened.load()).expressions).toEqual(items)
+    const backup = parseBackup(
+      JSON.stringify(createBackup(await reopened.load())),
+    )
+    await reopened.deleteExpression(items[0]!.id)
+    expect((await reopened.restore(backup)).expressions).toEqual(items)
+    reopened.close()
+    expect((await (await repository()).load()).expressions).toEqual(items)
   })
 
   test('ratings, preference changes and edited expressions survive reopening', async () => {
@@ -802,6 +952,44 @@ describe('IndexedDB persistence, atomicity, and errors', () => {
     )
     expect(await repo.load()).toEqual(before)
   })
+
+  test.each(['femaleAudioUrl', 'maleAudioUrl'] as const)(
+    'invalid %s rejects saves, imports, and restores atomically',
+    async (field) => {
+      const repo = await repository(data())
+      await repo.rate('a', 'speaking', 'good', now)
+      await repo.rate('a', 'listening', 'hard', now)
+      const before = await repo.rate('a', 'reading', 'easy', now)
+      for (const value of ['javascript:alert(1)', 42, null]) {
+        const invalid = expression('a', { [field]: value })
+        await expect(repo.saveExpression(invalid)).rejects.toThrow(
+          `expression.${field}:`,
+        )
+        expect(await repo.load()).toEqual(before)
+        await expect(
+          repo.applyLesson(
+            lesson([expression('new'), invalid]),
+            'update',
+            false,
+          ),
+        ).rejects.toThrow(`lesson.expressions[1].${field}:`)
+        expect(await repo.load()).toEqual(before)
+        const backup = createBackup(before)
+        backup.data.expressions = [expression('replacement'), invalid]
+        backup.data.reviews = []
+        backup.data.preferences.rate = 0.5
+        expect(() => parseBackup(JSON.stringify(backup))).toThrow(
+          `data.expressions[1].${field}:`,
+        )
+        await expect(repo.restore(backup)).rejects.toThrow(
+          `data.expressions[1].${field}:`,
+        )
+        expect(await repo.load()).toEqual(before)
+      }
+      repo.close()
+      expect(await (await repository()).load()).toEqual(before)
+    },
+  )
 
   test('out-of-order rating is rejected without changing saved history', async () => {
     const repo = await repository(data())

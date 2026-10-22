@@ -11,6 +11,10 @@ type AudioHarness = {
     voiceURI: string | undefined
   }[]
   recordingAttempts: string[]
+  recordingRates: number[]
+  recordingPauses: number
+  failRecordings: boolean
+  holdRecordings: boolean
   cancellations: number
   failSpeech: boolean
   holdSpeech: boolean
@@ -89,6 +93,10 @@ test.beforeEach(async ({ page }) => {
     const harness: AudioHarness = {
       calls: [],
       recordingAttempts: [],
+      recordingRates: [],
+      recordingPauses: 0,
+      failRecordings: true,
+      holdRecordings: false,
       cancellations: 0,
       failSpeech: false,
       holdSpeech: false,
@@ -163,13 +171,24 @@ test.beforeEach(async ({ page }) => {
       src = ''
       preload = ''
       playbackRate = 1
+      onplaying: (() => void) | null = null
+      onended: (() => void) | null = null
       play() {
         harness.recordingAttempts.push(this.src)
-        return Promise.reject(
-          new DOMException('Mock recording unavailable', 'NotSupportedError'),
-        )
+        harness.recordingRates.push(this.playbackRate)
+        if (harness.failRecordings)
+          return Promise.reject(
+            new DOMException('Mock recording unavailable', 'NotSupportedError'),
+          )
+        queueMicrotask(() => {
+          this.onplaying?.()
+          if (!harness.holdRecordings) this.onended?.()
+        })
+        return Promise.resolve()
       }
-      pause() {}
+      pause() {
+        harness.recordingPauses++
+      }
       load() {}
       removeAttribute(name: string) {
         if (name === 'src') this.src = ''
@@ -1101,6 +1120,208 @@ test('search shortcut respects text fields, and the native deletion dialog conta
   await page.keyboard.press('Escape')
   await expect(dialog).toHaveCount(0)
   expect((await storedData(page)).expressions).toHaveLength(2)
+})
+
+test('female and male URLs can be edited independently without changing general audio or review history', async ({
+  page,
+}) => {
+  const item = { ...first, audioUrl: 'https://example.com/general.mp3' }
+  const data = notebook([item])
+  data.reviews = [dueReview(first.id)]
+  await openNotebook(page, data)
+  await page
+    .getByRole('button', { name: `Edit ${first.french}`, exact: true })
+    .click()
+  await page
+    .locator('input[name="femaleAudioUrl"]')
+    .fill('https://example.com/female.mp3')
+  await page
+    .locator('input[name="maleAudioUrl"]')
+    .fill('https://example.com/male.mp3')
+  await page
+    .getByRole('button', { name: 'Save expression', exact: true })
+    .click()
+  await page.reload()
+  await expect(page.getByRole('searchbox')).toBeVisible()
+  let saved = await storedData(page)
+  expect(saved.expressions[0]).toMatchObject({
+    audioUrl: item.audioUrl,
+    femaleAudioUrl: 'https://example.com/female.mp3',
+    maleAudioUrl: 'https://example.com/male.mp3',
+  })
+  expect(saved.reviews).toEqual(data.reviews)
+  await page
+    .getByRole('button', { name: `Edit ${first.french}`, exact: true })
+    .click()
+  await expect(page.locator('input[name="femaleAudioUrl"]')).toHaveValue(
+    'https://example.com/female.mp3',
+  )
+  await page.locator('input[name="femaleAudioUrl"]').fill('')
+  await page
+    .getByRole('button', { name: 'Save expression', exact: true })
+    .click()
+  await expect(page.getByRole('searchbox')).toBeVisible()
+  saved = await storedData(page)
+  expect(saved.expressions[0]).not.toHaveProperty('femaleAudioUrl')
+  expect(saved.expressions[0]).toMatchObject({
+    audioUrl: item.audioUrl,
+    maleAudioUrl: 'https://example.com/male.mp3',
+  })
+  expect(saved.reviews).toEqual(data.reviews)
+})
+
+test('recording selection controls normal and slower playback and stops without autoplay on change', async ({
+  page,
+}) => {
+  const item = {
+    ...first,
+    audioUrl: 'https://example.com/general.mp3',
+    femaleAudioUrl: 'https://example.com/female.mp3',
+    maleAudioUrl: 'https://example.com/male.mp3',
+  }
+  await openNotebook(page, notebook([item]))
+  await page.evaluate(() => {
+    window.__browserAudio.failRecordings = false
+    window.__browserAudio.holdRecordings = true
+  })
+  await page
+    .getByRole('button', { name: `Listen to ${first.french}`, exact: true })
+    .click()
+  expect(
+    await page.evaluate(() => window.__browserAudio.recordingAttempts),
+  ).toEqual([item.audioUrl])
+  await page.getByRole('button', { name: /Notes & audio/ }).click()
+  const picker = page.getByRole('combobox', { name: 'Recording voice' })
+  await expect(picker).toHaveValue('general')
+  await picker.selectOption('female')
+  await page.locator('.audio-button').click()
+  await page.getByRole('button', { name: /Slower/ }).click()
+  expect(
+    await page.evaluate(() => window.__browserAudio.recordingRates),
+  ).toEqual([1, 1, 0.75])
+  const pauses = await page.evaluate(
+    () => window.__browserAudio.recordingPauses,
+  )
+  await picker.selectOption('male')
+  expect(
+    await page.evaluate(() => window.__browserAudio.recordingPauses),
+  ).toBeGreaterThan(pauses)
+  await expect(
+    page.getByRole('button', { name: 'Stop', exact: true }),
+  ).toHaveCount(0)
+  expect(
+    await page.evaluate(() => window.__browserAudio.recordingAttempts),
+  ).toEqual([item.audioUrl, item.femaleAudioUrl, item.femaleAudioUrl])
+  await page.locator('.audio-button').click()
+  expect(
+    await page.evaluate(() => window.__browserAudio.recordingAttempts),
+  ).toEqual([
+    item.audioUrl,
+    item.femaleAudioUrl,
+    item.femaleAudioUrl,
+    item.maleAudioUrl,
+  ])
+  expect(await page.evaluate(() => window.__browserAudio.calls)).toEqual([])
+  await page.setViewportSize({ width: 390, height: 844 })
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= innerWidth,
+    ),
+  ).toBe(true)
+  expect(
+    (await new AxeBuilder({ page }).withTags(['wcag2a', 'wcag2aa']).analyze())
+      .violations,
+  ).toEqual([])
+})
+
+for (const voice of ['female', 'male'] as const) {
+  test(`listening supports a ${voice}-only recording without device voices and keeps answers hidden`, async ({
+    page,
+  }) => {
+    const url = `https://example.com/${voice}.mp3`
+    const item = {
+      ...first,
+      [voice === 'female' ? 'femaleAudioUrl' : 'maleAudioUrl']: url,
+    }
+    await openNotebook(page, notebook([item]))
+    await page.evaluate(() => {
+      window.__browserAudio.changeVoices(false)
+      window.__browserAudio.failRecordings = false
+    })
+    await start(page, 'Listening')
+    await expect(
+      page.getByRole('combobox', { name: 'Recording voice' }),
+    ).toHaveValue(voice)
+    await absentFromDOMAndAria(page, [
+      first.french,
+      first.english,
+      ...hiddenGuides(first),
+    ])
+    await page
+      .getByRole('button', { name: 'Play French audio', exact: true })
+      .click()
+    await expect(
+      page.getByRole('button', { name: 'Reveal answer' }),
+    ).toBeEnabled()
+    expect(
+      await page.evaluate(() => window.__browserAudio.recordingAttempts),
+    ).toEqual([url])
+    expect(await page.evaluate(() => window.__browserAudio.calls)).toEqual([])
+    await page.getByRole('button', { name: 'Reveal answer' }).click()
+    await expect(
+      page.getByRole('heading', { name: first.french, exact: true }),
+    ).toBeVisible()
+    expect((await storedData(page)).reviews).toEqual([])
+  })
+}
+
+test('a selected female recording never silently falls back to male or speech when it fails', async ({
+  page,
+}) => {
+  const item = {
+    ...first,
+    femaleAudioUrl: 'https://example.com/female.mp3',
+    maleAudioUrl: 'https://example.com/male.mp3',
+  }
+  await openNotebook(page, notebook([item]))
+  await start(page, 'Listening')
+  await page
+    .getByRole('button', { name: 'Play French audio', exact: true })
+    .click()
+  await expect(page.getByRole('alert').first()).toBeVisible()
+  expect(
+    await page.evaluate(() => window.__browserAudio.recordingAttempts),
+  ).toEqual([item.femaleAudioUrl])
+  expect(await page.evaluate(() => window.__browserAudio.calls)).toEqual([])
+  await expect(
+    page.getByRole('button', { name: 'Reveal answer' }),
+  ).toBeDisabled()
+  await page
+    .getByRole('combobox', { name: 'Recording voice' })
+    .selectOption('male')
+  expect(
+    await page.evaluate(() => window.__browserAudio.recordingAttempts),
+  ).toHaveLength(1)
+  await page.evaluate(() => {
+    window.__browserAudio.failRecordings = false
+  })
+  await page
+    .getByRole('button', { name: 'Play French audio', exact: true })
+    .click()
+  await expect(
+    page.getByRole('button', { name: 'Reveal answer' }),
+  ).toBeEnabled()
+  expect(
+    await page.evaluate(() => window.__browserAudio.recordingAttempts),
+  ).toEqual([item.femaleAudioUrl, item.maleAudioUrl])
+  await page
+    .getByRole('button', {
+      name: 'Use French speech instead of recording',
+      exact: true,
+    })
+    .click()
+  expect(await page.evaluate(() => window.__browserAudio.calls)).toHaveLength(1)
+  expect((await storedData(page)).reviews).toEqual([])
 })
 
 test('library, revealed practice, and Manage pass automated accessibility checks', async ({

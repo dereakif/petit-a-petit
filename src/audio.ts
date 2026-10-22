@@ -2,6 +2,35 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { validateAudioUrl } from './data'
 import type { Expression, Preferences } from './data'
 
+type AudioExpression = Pick<
+  Expression,
+  'french' | 'audioUrl' | 'femaleAudioUrl' | 'maleAudioUrl'
+>
+export type RecordingVoice = 'general' | 'female' | 'male'
+
+export function getRecordings(expression: AudioExpression) {
+  const recordings: { voice: RecordingVoice; label: string; url: string }[] = []
+  if (expression.audioUrl)
+    recordings.push({
+      voice: 'general',
+      label: 'General recording',
+      url: expression.audioUrl,
+    })
+  if (expression.femaleAudioUrl)
+    recordings.push({
+      voice: 'female',
+      label: 'Female voice',
+      url: expression.femaleAudioUrl,
+    })
+  if (expression.maleAudioUrl)
+    recordings.push({
+      voice: 'male',
+      label: 'Male voice',
+      url: expression.maleAudioUrl,
+    })
+  return recordings
+}
+
 export function useAudio(preferences: Preferences) {
   const [voices, setVoices] = useState<SpeechSynthesisVoice[]>([])
   const [error, setError] = useState('')
@@ -58,9 +87,10 @@ export function useAudio(preferences: Preferences) {
 
   const play = useCallback(
     (
-      expression: Pick<Expression, 'french' | 'audioUrl'>,
+      expression: AudioExpression,
       slow = false,
       synthesized = false,
+      recordingVoice?: RecordingVoice,
     ) => {
       stop()
       setError('')
@@ -75,8 +105,18 @@ export function useAudio(preferences: Preferences) {
         clearTimeout(timer.current)
         setPlaying(false)
       }
-      if (expression.audioUrl && !synthesized) {
-        if (!validateAudioUrl(expression.audioUrl)) {
+      const recordings = getRecordings(expression)
+      const chosenRecording = recordingVoice
+        ? recordings.find((item) => item.voice === recordingVoice)
+        : recordings[0]
+      if (recordingVoice && !chosenRecording && !synthesized) {
+        fail(
+          'The selected recording is no longer available. Choose another recording or explicitly use French speech instead.',
+        )
+        return
+      }
+      if (chosenRecording && !synthesized) {
+        if (!validateAudioUrl(chosenRecording.url)) {
           fail(
             'This recording URL is unsafe. Only HTTP or HTTPS recordings are allowed. Try French speech instead.',
           )
@@ -85,7 +125,7 @@ export function useAudio(preferences: Preferences) {
         const audio = new Audio()
         recording.current = audio
         audio.preload = 'none'
-        audio.src = expression.audioUrl
+        audio.src = chosenRecording.url
         audio.playbackRate = slow ? 0.75 : 1
         audio.onended = finish
         audio.onerror = () =>
