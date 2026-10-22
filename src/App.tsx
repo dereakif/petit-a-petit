@@ -9,7 +9,7 @@ import type { AppData, Expression, Mode, Rating, Repository } from './data'
 import { useAudio } from './audio'
 import { Answer, ConfirmDelete, ExpressionForm, Icon } from './components'
 import Practice from './Practice'
-import Manage from './Manage'
+import Manage from './Manage.tsx'
 import './App.css'
 
 type View = 'library' | 'practice' | 'manage'
@@ -367,8 +367,8 @@ export default function App() {
                         {filtered.length === 1 ? 'expression' : 'expressions'}
                         <span className="dot-separator">·</span>
                         {search ||
-                        category !== 'All categories' ||
-                        lesson !== 'All lessons'
+                          category !== 'All categories' ||
+                          lesson !== 'All lessons'
                           ? 'Filtered collection'
                           : 'A small beginning, a world of possibilities'}
                       </p>
